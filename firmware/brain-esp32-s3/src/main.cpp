@@ -382,8 +382,6 @@ void securityLoop(void * pvParameters) {
 
     int soundThreshold = map(potValue, 0, 4095, 100, 2000);
     currentSensitivity = soundThreshold;
-
-    int soundLevel = analogRead(SOUND_PIN);
     
     // 1. Track the exact "Silence" center point (DC Offset).
     // Uses a very slow Exponential Moving Average (EMA) to find the middle of the audio wave.
