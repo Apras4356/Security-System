@@ -428,7 +428,7 @@ void securityLoop(void * pvParameters) {
       digitalWrite(SOUND_LED_PIN, LOW);
       isSirenDetected = false;
     }
-
+    
     if (systemArmed && !isAlarmActive) {
       if (sensorState == HIGH) {
         triggerSeinagermos("Laser Tripwire Broken");
