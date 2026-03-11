@@ -1,5 +1,23 @@
-.pio
-.vscode/.browse.c_cpp.db*
-.vscode/c_cpp_properties.json
-.vscode/launch.json
-.vscode/ipch
+# PlatformIO and IDE folders
+.pio/
+.vscode/
+.gcc-flags.json
+
+# Build outputs
+build/
+bin/
+*.bin
+*.elf
+*.map
+*.hex
+
+# Library dependencies (Git will re-download these if needed)
+libdeps/
+.lib/
+
+# OS hidden files
+.DS_Store
+Thumbs.db
+
+# Sensitive Info (optional, but good practice)
+# secrets.h
