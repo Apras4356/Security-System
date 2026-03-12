@@ -7,6 +7,13 @@
 
 #include "Globals.h"
 
+extern IRsend irsend;
+extern const uint32_t IR_POWER;
+extern const uint32_t IR_VOL_UP;
+extern const uint32_t IR_VOL_DOWN;
+extern const uint32_t IR_MUTE;
+extern const uint32_t IR_PC_IN;
+extern const uint32_t IR_BT_IN;
 extern bool devModeActive;
 extern int webSoundSensitivity;
 extern WebServer server;
@@ -46,6 +53,10 @@ inline String getStyles() {
   s += "table {margin: 20px auto; border-collapse: collapse; width: 90%; max-width: 600px; background-color: #333;} ";
   s += "th, td {padding: 12px; border: 1px solid #555;} th {background-color: #444;} ";
   s += "input[type='text'], input[type='password'], input[type='number'] { width: 90%; max-width: 300px; padding: 12px; margin: 10px 0; border-radius: 6px; border: 1px solid #555; background-color: #444; color: white; font-size: 16px; }</style>";
+  s += ".remote-box {background-color: #2c3e50; padding: 20px 10px; border-radius: 12px; border: 2px solid #34495e; max-width: 380px; margin: 30px auto; box-shadow: 0 4px 8px rgba(0,0,0,0.5);} ";
+  s += ".btn-ir {width: 42%; margin: 6px; padding: 12px 0; font-size: 16px; border-radius: 8px; font-weight: bold; cursor: pointer; border: none; color: white;} ";
+  s += ".btn-ir:active {opacity: 0.7; transform: scale(0.95);} ";
+  s += "</style>";
   return s;
 }
 
@@ -85,8 +96,31 @@ inline void handleRoot() {
   html += "<a href='/settings' class='btn btn-orange'>" + T("WIFI SETUP", "ΡΥΘΜΙΣΕΙΣ WIFI") + "</a>";
   html += "<a href='/help' class='btn btn-gray'>" + T("HELP", "ΒΟΗΘΕΙΑ") + "</a>";
 
+  // --- NEW VIRTUAL REMOTE CONTROL UI ---
+  html += "<div class='remote-box'>";
+  html += "<h3 style='color:#ecf0f1; margin-top:0;'>🔊 " + T("Speaker Remote", "Τηλεχειριστήριο Ηχείου") + "</h3>";
+  
+  // Power & Mute Row
+  html += "<button class='btn-ir' style='background-color:#e74c3c;' onclick='sendIR(\"power\")'>🔌 " + T("Power", "On/Off") + "</button>";
+  html += "<button class='btn-ir' style='background-color:#f39c12;' onclick='sendIR(\"mute\")'>🔇 " + T("Mute", "Σίγαση") + "</button><br>";
+  
+  // Volume Row
+  html += "<button class='btn-ir' style='background-color:#3498db;' onclick='sendIR(\"voldown\")'>🔉 " + T("Vol -", "Ένταση -") + "</button>";
+  html += "<button class='btn-ir' style='background-color:#3498db;' onclick='sendIR(\"volup\")'>🔊 " + T("Vol +", "Ένταση +") + "</button><br>";
+  
+  // Input Row
+  html += "<button class='btn-ir' style='background-color:#9b59b6;' onclick='sendIR(\"pcin\")'>💻 " + T("PC Input", "Είσοδος PC") + "</button>";
+  html += "<button class='btn-ir' style='background-color:#9b59b6;' onclick='sendIR(\"btin\")'>📱 " + T("BT Input", "Είσοδος BT") + "</button>";
+  html += "</div>";
+  // -------------------------------------
+
   html += "<script>";
   html += "var isGr = " + String(isGreek ? "true" : "false") + ";";
+  
+  // --- NEW JS FUNCTION FOR THE REMOTE ---
+  html += "function sendIR(cmd) { fetch('/api/ir?cmd=' + cmd).catch(e => console.error(e)); } ";
+  // ------------------------------------
+
   html += "setInterval(function() {";
   html += "  fetch('/status_data').then(r => r.json()).then(data => {";
   html += "    document.getElementById('status-armed').innerHTML = data.armed ? (isGr ? '<span style=\"color:green;\">ΟΠΛΙΣΜΕΝΟ</span>' : '<span style=\"color:green;\">ARMED</span>') : (isGr ? '<span style=\"color:orange;\">ΑΦΟΠΛΙΣΜΕΝΟ</span>' : '<span style=\"color:orange;\">DISARMED</span>');";
@@ -98,16 +132,15 @@ inline void handleRoot() {
   html += "  });";
   html += "}, 2000);"; 
   html += "</script>";
+
   html += "<hr style='border-color:#444; width:80%; margin: 20px auto;'>";
   html += "<h2>" + T("Mic Sensitivity", "Ευαισθησία Μικροφώνου") + "</h2>";
   html += "<p style='color:#aaa; font-size:12px;'>" + T("Lower = More Sensitive. Higher = Less Sensitive.", "Μικρότερο = Πιο Ευαίσθητο. Μεγαλύτερο = Λιγότερο Ευαίσθητο.") + "</p>";
   
-  // This slider goes from 20 (2.0x background noise) to 150 (15.0x background noise)
   html += "<input type='range' min='20' max='150' value='" + String(webSoundSensitivity) + "' ";
   html += "onchange='fetch(\"/set_sens?val=\" + this.value)' style='width: 80%; max-width: 400px;'>";
   html += "<br><hr style='border-color:#444; width:80%; margin: 20px auto;'>";
   
-  // Change button color and text based on whether Dev Mode is active
   if (devModeActive) {
     html += "<a href='/toggle_dev' class='btn btn-red'>" + T("DISABLE DEV MODE", "ΑΠΕΝΕΡΓ. DEV MODE") + "</a>";
   } else {
@@ -519,6 +552,26 @@ inline void handleToggleDev() {
   server.send(302, "text/plain", "");
 }
 
+void handleIRCommand() {
+  if (server.hasArg("cmd")) {
+    String cmd = server.arg("cmd");
+    Serial.println("Web Remote triggered: " + cmd);
+
+    if (cmd == "power")    irsend.sendNEC(IR_POWER, 32);
+    else if (cmd == "volup")  irsend.sendNEC(IR_VOL_UP, 32);
+    else if (cmd == "voldown") irsend.sendNEC(IR_VOL_DOWN, 32);
+    else if (cmd == "mute")   irsend.sendNEC(IR_MUTE, 32);
+    else if (cmd == "pcin")   irsend.sendNEC(IR_PC_IN, 32);
+    else if (cmd == "btin")   irsend.sendNEC(IR_BT_IN, 32);
+    
+    // Quick 100ms delay to ensure signal finishes before returning response
+    delay(100); 
+    server.send(200, "text/plain", "OK");
+  } else {
+    server.send(400, "text/plain", "Missing command");
+  }
+}
+
 inline void setupWebHandlers() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/status_data", HTTP_GET, handleStatusData);
@@ -540,4 +593,5 @@ inline void setupWebHandlers() {
   server.on("/savecard", HTTP_POST, handleSaveCard);
   server.on("/set_sens", HTTP_GET, handleSetSens);
   server.on("/toggle_dev", HTTP_GET, handleToggleDev);
+  server.on("/api/ir", HTTP_GET, handleIRCommand);
 }
