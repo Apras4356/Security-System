@@ -12,7 +12,6 @@
 #include <WiFiManager.h>
 #include <Preferences.h>
 #include <SPI.h>
-#include <MFRC522.h>
 #include <esp_wifi.h>
 #include <esp_wifi_types.h>
 #include <IRsend.h>
@@ -24,6 +23,7 @@
 #include "WebPages.h"
 #include "QRScanner.h"
 #include "IRManager.h"
+#include "RFIDManager.h"
 
 bool devModeActive = false;
 int webSoundSensitivity = 50; 
@@ -40,12 +40,6 @@ SensingAP sensingTable[MAX_SENSING_APS];
 int activeAPCount = 1;
 float static_background[CSI_CHANNELS];
 float alpha = 0.05;
-
-MFRC522 mfrc522[MAX_ZONES];
-AccessZone systemZones[MAX_ZONES];
-int zoneCount = 0;
-unsigned long zoneOpenTimes[MAX_ZONES] = {0};
-const unsigned long RELAY_OPEN_DURATION = 3000;
 
 volatile bool isAlarmActive = false;
 int silenceOffset = 3500; 
@@ -64,11 +58,6 @@ extern void saveCards();
 extern void loadCards();
 
 Preferences preferences;
-
-RFIDCard enrolledCards[MAX_CARDS];
-int cardCount = 0;
-String rfidLogs[MAX_LOGS];
-int logIndex = 0;
 
 Adafruit_NeoPixel LED_RGB(1, 48, NEO_GRBW + NEO_KHZ800);
 LiquidCrystal_I2C lcd(0x27, 16, 2);
@@ -625,10 +614,9 @@ void setup() {
   Wire.begin(I2C_SDA, I2C_SCL); 
   SPI.begin();
   
-  loadZones(); 
+  handleRFID();
   lcd.init(); 
   lcd.backlight();
-  loadCards();
   
   // 3. Load Preferences
   preferences.begin("sys_prefs", true);
@@ -719,28 +707,8 @@ void setup() {
 }
 
 void loop() {
-  manageRelays();
+  handleRFID();
   handleIRLearning();
 
-  for (int i = 0; i < zoneCount; i++) {
-    if (systemZones[i].isActive && systemZones[i].ssPin >= 0) {
-      
-      if (mfrc522[i].PICC_IsNewCardPresent() && mfrc522[i].PICC_ReadCardSerial()) {
-        String scannedUID = "";
-        for (byte j = 0; j < mfrc522[i].uid.size; j++) {
-          scannedUID += String(mfrc522[i].uid.uidByte[j] < 0x10 ? "0" : "");
-          scannedUID += String(mfrc522[i].uid.uidByte[j], HEX);
-        }
-        scannedUID.toUpperCase();
-        
-        Serial.println("Card tapped at " + systemZones[i].name + " | UID: " + scannedUID);
-
-        processCardStatus(scannedUID, false, i);
-        
-        mfrc522[i].PICC_HaltA();
-        mfrc522[i].PCD_StopCrypto1();
-      }
-    }
-  }
   vTaskDelay(50 / portTICK_PERIOD_MS); 
 }

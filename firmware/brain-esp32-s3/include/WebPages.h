@@ -8,27 +8,22 @@
 
 #include "Globals.h"
 #include "IRManager.h"
+#include "RFIDManager.h"
 
 extern bool devModeActive;
 extern int webSoundSensitivity;
 extern WebServer server;
-extern MFRC522 mfrc522[];
 extern Preferences preferences;
 extern volatile bool systemArmed;
 extern volatile bool isAlarmActive;
 extern bool isSirenDetected;
 extern volatile bool isEnrollMode;
-extern String pendingUID;
 extern bool isGreek;
 extern String telegramToken;
 extern String telegramChatID;
 extern String callMeBotUser;
 extern String targetSpeaker;
-extern RFIDCard enrolledCards[];
 extern void saveCards(); 
-extern int cardCount;
-extern int zoneCount;
-extern AccessZone systemZones[];
 extern volatile float remoteBatteryVoltage;
 extern int getBatteryPercentage(float voltage);
 
