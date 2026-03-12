@@ -24,12 +24,13 @@
 
 const uint16_t IR_LED_PIN = 4; // Change to whatever pin you used for the clear LED
 IRsend irsend(IR_LED_PIN);
-const uint32_t IR_POWER    = 0x0x8E7C23D;
-const uint32_t IR_VOL_UP   = 0x0x8E732CD;
-const uint32_t IR_VOL_DOWN = 0x0xFFFFFFFFFFFFFFFF;
-const uint32_t IR_MUTE     = 0x0x8E702FD;
-const uint32_t IR_PC_IN    = 0x0x8E78A75;
-const uint32_t IR_BT_IN    = 0x0x8E76897;
+const uint32_t IR_POWER    = 0x8E7C23D;
+const uint32_t IR_VOL_UP   = 0x8E732CD;
+const uint32_t IR_VOL_DOWN = 0xFFFFFFFFFFFFFFFF;
+const uint32_t IR_PLAY_PAUSE = 0x8E70AF5;
+const uint32_t IR_MUTE     = 0x8E702FD;
+const uint32_t IR_PC_IN    = 0x8E78A75;
+const uint32_t IR_BT_IN    = 0x8E76897;
 bool devModeActive = false;
 int webSoundSensitivity = 50; 
 float audioDCOffset = 2048.0;

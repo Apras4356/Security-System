@@ -11,6 +11,7 @@ extern IRsend irsend;
 extern const uint32_t IR_POWER;
 extern const uint32_t IR_VOL_UP;
 extern const uint32_t IR_VOL_DOWN;
+extern const uint32_t IR_PLAY_PAUSE;
 extern const uint32_t IR_MUTE;
 extern const uint32_t IR_PC_IN;
 extern const uint32_t IR_BT_IN;
@@ -107,6 +108,7 @@ inline void handleRoot() {
   // Volume Row
   html += "<button class='btn-ir' style='background-color:#3498db;' onclick='sendIR(\"voldown\")'>🔉 " + T("Vol -", "Ένταση -") + "</button>";
   html += "<button class='btn-ir' style='background-color:#3498db;' onclick='sendIR(\"volup\")'>🔊 " + T("Vol +", "Ένταση +") + "</button><br>";
+  html += "<button class='btn-ir' style='background-color:#2ecc71; width:88%; margin-top:10px;' onclick='sendIR(\"playpause\")'>⏯️ " + T("Play / Pause", "Αναπαραγωγή / Παύση") + "</button>";
   
   // Input Row
   html += "<button class='btn-ir' style='background-color:#9b59b6;' onclick='sendIR(\"pcin\")'>💻 " + T("PC Input", "Είσοδος PC") + "</button>";
@@ -563,6 +565,7 @@ void handleIRCommand() {
     else if (cmd == "mute")   irsend.sendNEC(IR_MUTE, 32);
     else if (cmd == "pcin")   irsend.sendNEC(IR_PC_IN, 32);
     else if (cmd == "btin")   irsend.sendNEC(IR_BT_IN, 32);
+    else if (cmd == "playpause") irsend.sendNEC(IR_PLAY_PAUSE, 32);
     
     // Quick 100ms delay to ensure signal finishes before returning response
     delay(100); 
