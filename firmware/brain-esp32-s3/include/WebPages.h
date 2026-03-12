@@ -9,14 +9,11 @@
 #include "Globals.h"
 #include "IRManager.h"
 #include "RFIDManager.h"
+#include "SecurityManager.h"
 
 extern bool devModeActive;
-extern int webSoundSensitivity;
 extern WebServer server;
 extern Preferences preferences;
-extern volatile bool systemArmed;
-extern volatile bool isAlarmActive;
-extern bool isSirenDetected;
 extern volatile bool isEnrollMode;
 extern bool isGreek;
 extern String telegramToken;
@@ -473,7 +470,7 @@ inline void handleSaveZone() {
       systemZones[slot].isActive = true;
       
       if (systemZones[slot].ssPin >= 0) {
-        mfrc522[slot].PCD_Init(systemZones[slot].ssPin, LOCAL_RST_PIN);
+        initZoneReader(slot); // Tell the RFID Manager to do the heavy lifting!
       }
       if (systemZones[slot].relayPin >= 0) {
         pinMode(systemZones[slot].relayPin, OUTPUT);

@@ -149,6 +149,16 @@ void processCardStatus(String scannedUID, bool isRemote, int zoneID) {
     }
 }
 
+void initZoneReader(int slot) {
+    if (slot >= 0 && slot < MAX_ZONES && systemZones[slot].isActive) {
+        if (systemZones[slot].ssPin >= 0) {
+            // Initialize the newly saved reader!
+            mfrc522[slot].PCD_Init(systemZones[slot].ssPin, LOCAL_RST_PIN);
+            Serial.println("Initialized new RFID reader for slot: " + String(slot));
+        }
+    }
+}
+
 // This replaces the big RFID chunk inside your main loop()!
 void handleRFID() {
     manageRelays(); // Handle the auto-locking

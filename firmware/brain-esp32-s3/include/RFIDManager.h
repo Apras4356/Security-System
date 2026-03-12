@@ -18,6 +18,7 @@ extern String pendingUID;
 void setupRFID();
 void handleRFID();
 void manageRelays();
+void initZoneReader(int slot);
 void processCardStatus(String scannedUID, bool isRemote, int zoneID);
 void logRFIDEvent(String nameOrUID, String status);
 void openAccessPoint(int zoneID);

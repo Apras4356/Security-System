@@ -24,6 +24,7 @@
 #include "QRScanner.h"
 #include "IRManager.h"
 #include "RFIDManager.h"
+#include "SecurityManager.h"
 
 bool devModeActive = false;
 int webSoundSensitivity = 50; 
@@ -226,115 +227,6 @@ void triggerSeinagermos(String reason) {
   sendNotification("SECURITY ALERT: " + reason);
   bot.sendMessage(telegramChatID, "⚠️ ALARM TRIPPED: " + reason, "");
   Serial.println("Alarm active via: " + reason);
-}
-
-
-void openAccessPoint(int zoneID) {
-  if (zoneID < 0 || zoneID >= zoneCount) return;
-  
-  if (systemZones[zoneID].isActive) {
-    Serial.println("Unlocking Access Point: " + systemZones[zoneID].name);
-    int pin = systemZones[zoneID].relayPin;
-    if (pin >= 0) {
-      digitalWrite(pin, HIGH);
-      zoneOpenTimes[zoneID] = millis();
-    }
-  }
-}
-
-void manageRelays() {
-  for (int i = 0; i < zoneCount; i++) {
-    if (systemZones[i].isActive && systemZones[i].relayPin >= 0) {
-      if (zoneOpenTimes[i] > 0 && (millis() - zoneOpenTimes[i] >= RELAY_OPEN_DURATION)) {
-        digitalWrite(systemZones[i].relayPin, LOW);
-        zoneOpenTimes[i] = 0;
-        Serial.println("Auto-Locking Access Point: " + systemZones[i].name);
-      }
-    }
-  }
-}
-
-void loadZones() {
-  preferences.begin("sys_zones", true);
-  zoneCount = preferences.getInt("zCount", 0);
-  
-  for (int i = 0; i < MAX_ZONES; i++) {
-    String keyBase = "z" + String(i);
-    systemZones[i].isActive = preferences.getBool((keyBase + "a").c_str(), false);
-    
-    if (systemZones[i].isActive) {
-      systemZones[i].name = preferences.getString((keyBase + "n").c_str(), "Unnamed");
-      systemZones[i].ssPin = preferences.getInt((keyBase + "s").c_str(), -1);
-      systemZones[i].relayPin = preferences.getInt((keyBase + "r").c_str(), -1);
-      
-      if (systemZones[i].ssPin >= 0) {
-        mfrc522[i].PCD_Init(systemZones[i].ssPin, LOCAL_RST_PIN);
-      }
-      if (systemZones[i].relayPin >= 0) {
-        pinMode(systemZones[i].relayPin, OUTPUT);
-        digitalWrite(systemZones[i].relayPin, LOW);
-      }
-    }
-  }
-  preferences.end();
-  Serial.println("System Zones Loaded from Memory.");
-}
-
-void processCardStatus(String scannedUID, bool isRemote, int zoneID) {
-  scannedUID.trim();
-  scannedUID.toUpperCase();
-
-  if (isEnrollMode) {
-    pendingUID = scannedUID;
-    Serial.println("ENROLL MODE: Captured UID " + pendingUID);
-    
-    passiveBuzzerBeep(100);
-    vTaskDelay(150 / portTICK_PERIOD_MS);
-    passiveBuzzerBeep(100);
-  } else {
-    bool isAuthorized = false; 
-    bool isRevoked = false; 
-    String cardName = "Unknown Card";
-    
-    for (int i = 0; i < cardCount; i++) {
-      if (enrolledCards[i].uid == scannedUID) {
-        cardName = enrolledCards[i].name;
-        if (enrolledCards[i].isActive && (enrolledCards[i].allowedZones & (1 << zoneID))) {
-            isAuthorized = true;
-        } else if (!enrolledCards[i].isActive) {
-            isRevoked = true;
-        }
-        break;
-      }
-    }
-    
-    if (isAuthorized) {
-      if (systemArmed || isAlarmActive) {
-        logRFIDEvent(cardName, "AUTHORIZED - Disarmed System");
-        disarmSystem();
-      } else {
-        logRFIDEvent(cardName, "AUTHORIZED - Zone " + String(zoneID));
-      }
-      
-      openAccessPoint(zoneID);
-      passiveBuzzerBeep(100);
-      
-    } else if (isRevoked) {
-      logRFIDEvent(cardName, "DENIED (REVOKED)");
-      passiveBuzzerBeep(300);
-    } else {
-      logRFIDEvent("Unknown (" + scannedUID + ")", "DENIED");
-      passiveBuzzerBeep(300);
-    }
-    
-    if (isRemote) {
-      uint8_t replyMsg = (isAuthorized) ? 1 : 0;
-      esp_now_peer_info_t peerInfo = {}; 
-      memcpy(peerInfo.peer_addr, lastRemoteMac, 6);
-      if (!esp_now_is_peer_exist(lastRemoteMac)) esp_now_add_peer(&peerInfo);
-      esp_now_send(lastRemoteMac, &replyMsg, 1);
-    }
-  }
 }
 
 
@@ -673,15 +565,7 @@ void setup() {
       activeAPCount = 1;
   }
 
-  wifi_csi_config_t csi_config = {}; 
-  esp_err_t csi_err = esp_wifi_set_csi(true);
-  if (csi_err == ESP_OK) {
-      esp_wifi_set_csi_config(&csi_config);
-      esp_wifi_set_csi_rx_cb(csi_rx_callback, NULL);
-      Serial.println("Gait Analysis Engine Started.");
-  } else {
-      Serial.printf("CSI Error: %s\n", esp_err_to_name(csi_err));
-  }
+  setupSecurity();
   
   lcd.clear(); 
   lcd.setCursor(0,0); 
