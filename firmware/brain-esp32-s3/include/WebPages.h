@@ -4,17 +4,11 @@
 #include <Preferences.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#include <IRsend.h>
 
 #include "Globals.h"
+#include "IRManager.h"
 
-extern IRsend irsend;
-extern const uint32_t IR_POWER;
-extern const uint32_t IR_VOL_UP;
-extern const uint32_t IR_VOL_DOWN;
-extern const uint32_t IR_PLAY_PAUSE;
-extern const uint32_t IR_MUTE;
-extern const uint32_t IR_PC_IN;
-extern const uint32_t IR_BT_IN;
 extern bool devModeActive;
 extern int webSoundSensitivity;
 extern WebServer server;
@@ -57,6 +51,7 @@ inline String getStyles() {
   s += ".remote-box {background-color: #2c3e50; padding: 20px 10px; border-radius: 12px; border: 2px solid #34495e; max-width: 380px; margin: 30px auto; box-shadow: 0 4px 8px rgba(0,0,0,0.5);} ";
   s += ".btn-ir {width: 42%; margin: 6px; padding: 12px 0; font-size: 16px; border-radius: 8px; font-weight: bold; cursor: pointer; border: none; color: white;} ";
   s += ".btn-ir:active {opacity: 0.7; transform: scale(0.95);} ";
+  s += "#learnOverlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:1000; color:#f39c12; padding-top:50%; font-size:24px; font-weight:bold; } ";
   s += "</style>";
   return s;
 }
@@ -97,43 +92,70 @@ inline void handleRoot() {
   html += "<a href='/settings' class='btn btn-orange'>" + T("WIFI SETUP", "ΡΥΘΜΙΣΕΙΣ WIFI") + "</a>";
   html += "<a href='/help' class='btn btn-gray'>" + T("HELP", "ΒΟΗΘΕΙΑ") + "</a>";
 
-  // --- NEW VIRTUAL REMOTE CONTROL UI ---
-  html += "<div class='remote-box'>";
+html += "<div id='learnOverlay'>📡 " + T("Waiting for remote...", "Αναμονή για τηλεχειριστήριο...") + "<br><span style='font-size:16px; color:#aaa;'>" + T("Point remote at ESP32 and press the button", "Στοχεύστε το ESP32 και πατήστε το κουμπί") + "</span></div>";
+
+  // --- VIRTUAL REMOTE CONTROL UI ---
+  html += "<div class='remote-box' id='remoteBox'>";
   html += "<h3 style='color:#ecf0f1; margin-top:0;'>🔊 " + T("Speaker Remote", "Τηλεχειριστήριο Ηχείου") + "</h3>";
   
-  // Power & Mute Row
   html += "<button class='btn-ir' style='background-color:#e74c3c;' onclick='sendIR(\"power\")'>🔌 " + T("Power", "On/Off") + "</button>";
   html += "<button class='btn-ir' style='background-color:#f39c12;' onclick='sendIR(\"mute\")'>🔇 " + T("Mute", "Σίγαση") + "</button><br>";
   
-  // Volume Row
   html += "<button class='btn-ir' style='background-color:#3498db;' onclick='sendIR(\"voldown\")'>🔉 " + T("Vol -", "Ένταση -") + "</button>";
   html += "<button class='btn-ir' style='background-color:#3498db;' onclick='sendIR(\"volup\")'>🔊 " + T("Vol +", "Ένταση +") + "</button><br>";
+  
+  html += "<button class='btn-ir' style='background-color:#9b59b6;' onclick='sendIR(\"pcin\")'>💻 " + T("PC Input", "Είσοδος PC") + "</button>";
+  html += "<button class='btn-ir' style='background-color:#9b59b6;' onclick='sendIR(\"btin\")'>📱 " + T("BT Input", "Είσοδος BT") + "</button><br>";
+  
   html += "<button class='btn-ir' style='background-color:#2ecc71; width:88%; margin-top:10px;' onclick='sendIR(\"playpause\")'>⏯️ " + T("Play / Pause", "Αναπαραγωγή / Παύση") + "</button>";
   
-  // Input Row
-  html += "<button class='btn-ir' style='background-color:#9b59b6;' onclick='sendIR(\"pcin\")'>💻 " + T("PC Input", "Είσοδος PC") + "</button>";
-  html += "<button class='btn-ir' style='background-color:#9b59b6;' onclick='sendIR(\"btin\")'>📱 " + T("BT Input", "Είσοδος BT") + "</button>";
+  html += "<hr style='border-color:#555; margin: 15px auto; width: 90%;'>";
+  html += "<button id='learnBtn' class='btn btn-orange' style='width:90%; font-size:14px;' onclick='toggleLearnMode()'>🎓 " + T("ENTER LEARN MODE", "ΛΕΙΤΟΥΡΓΙΑ ΕΚΜΑΘΗΣΗΣ") + "</button>";
   html += "</div>";
-  // -------------------------------------
 
+  // --- JAVASCRIPT ---
   html += "<script>";
   html += "var isGr = " + String(isGreek ? "true" : "false") + ";";
+  html += "var isLearningMode = false;";
   
-  // --- NEW JS FUNCTION FOR THE REMOTE ---
-  html += "function sendIR(cmd) { fetch('/api/ir?cmd=' + cmd).catch(e => console.error(e)); } ";
-  // ------------------------------------
+  html += "function toggleLearnMode() {";
+  html += "  isLearningMode = !isLearningMode;";
+  html += "  var btn = document.getElementById('learnBtn');";
+  html += "  var box = document.getElementById('remoteBox');";
+  html += "  if (isLearningMode) {";
+  html += "    btn.innerHTML = isGr ? '🛑 ΑΚΥΡΩΣΗ ΕΚΜΑΘΗΣΗΣ' : '🛑 CANCEL LEARNING';";
+  html += "    btn.className = 'btn btn-red';";
+  html += "    box.style.border = '4px solid #f39c12';";
+  html += "  } else {";
+  html += "    btn.innerHTML = isGr ? '🎓 ΛΕΙΤΟΥΡΓΙΑ ΕΚΜΑΘΗΣΗΣ' : '🎓 ENTER LEARN MODE';";
+  html += "    btn.className = 'btn btn-orange';";
+  html += "    box.style.border = '2px solid #34495e';";
+  html += "  }";
+  html += "}";
 
-  html += "setInterval(function() {";
-  html += "  fetch('/status_data').then(r => r.json()).then(data => {";
-  html += "    document.getElementById('status-armed').innerHTML = data.armed ? (isGr ? '<span style=\"color:green;\">ΟΠΛΙΣΜΕΝΟ</span>' : '<span style=\"color:green;\">ARMED</span>') : (isGr ? '<span style=\"color:orange;\">ΑΦΟΠΛΙΣΜΕΝΟ</span>' : '<span style=\"color:orange;\">DISARMED</span>');";
-  html += "    document.getElementById('status-siren').innerHTML = data.siren ? (isGr ? '<span style=\"color:red;\">ΝΑΙ</span>' : '<span style=\"color:red;\">YES</span>') : (isGr ? '<span style=\"color:green;\">ΟΧΙ</span>' : '<span style=\"color:green;\">NO</span>');";
-  html += "    if(data.voltage > 0.0) {";
-  html += "      var color = (data.battPct > 20) ? '#2ecc71' : '#e74c3c';";
-  html += "      document.getElementById('status-batt').innerHTML = '<span style=\"color:' + color + '; font-weight:bold;\">' + data.voltage.toFixed(2) + 'V (' + data.battPct + '%)</span>';";
-  html += "    }";
-  html += "  });";
-  html += "}, 2000);"; 
-  html += "</script>";
+  html += "function sendIR(cmd) {";
+  html += "  if (isLearningMode) {";
+  html += "    fetch('/api/learn?btn=' + cmd).then(() => {";
+  html += "      document.getElementById('learnOverlay').style.display = 'block';";
+  html += "      checkLearnStatus();";
+  html += "    });";
+  html += "  } else {";
+  html += "    fetch('/api/ir?cmd=' + cmd).catch(e => console.error(e));";
+  html += "  }";
+  html += "}";
+
+  html += "function checkLearnStatus() {";
+  html += "  var interval = setInterval(() => {";
+  html += "    fetch('/api/learn_status').then(r => r.text()).then(txt => {";
+  html += "      if (txt === 'DONE') {";
+  html += "        clearInterval(interval);";
+  html += "        document.getElementById('learnOverlay').style.display = 'none';";
+  html += "        toggleLearnMode();"; // Turn off learn mode automatically
+  html += "        alert(isGr ? 'Επιτυχία! Ο κωδικός αποθηκεύτηκε.' : 'Success! IR Code saved permanently.');";
+  html += "      }";
+  html += "    });";
+  html += "  }, 1000);"; // Check every 1 second
+  html += "}";
 
   html += "<hr style='border-color:#444; width:80%; margin: 20px auto;'>";
   html += "<h2>" + T("Mic Sensitivity", "Ευαισθησία Μικροφώνου") + "</h2>";
@@ -554,20 +576,33 @@ inline void handleToggleDev() {
   server.send(302, "text/plain", "");
 }
 
-void handleIRCommand() {
+inline void handleIRLearnCmd() {
+  if (server.hasArg("btn")) {
+    activeLearningButton = server.arg("btn");
+    Serial.println("Learning mode activated for: " + activeLearningButton);
+    server.send(200, "text/plain", "LEARNING");
+  } else {
+    server.send(400, "text/plain", "Missing button");
+  }
+}
+
+inline void handleIRLearnCheck() {
+  // If the main loop cleared the variable, learning is done!
+  if (activeLearningButton == "") {
+    server.send(200, "text/plain", "DONE");
+  } else {
+    server.send(200, "text/plain", "WAITING");
+  }
+}
+
+inline void handleIRCommand() {
   if (server.hasArg("cmd")) {
     String cmd = server.arg("cmd");
     Serial.println("Web Remote triggered: " + cmd);
-
-    if (cmd == "power")    irsend.sendNEC(IR_POWER, 32);
-    else if (cmd == "volup")  irsend.sendNEC(IR_VOL_UP, 32);
-    else if (cmd == "voldown") irsend.sendNEC(IR_VOL_DOWN, 32);
-    else if (cmd == "mute")   irsend.sendNEC(IR_MUTE, 32);
-    else if (cmd == "pcin")   irsend.sendNEC(IR_PC_IN, 32);
-    else if (cmd == "btin")   irsend.sendNEC(IR_BT_IN, 32);
-    else if (cmd == "playpause") irsend.sendNEC(IR_PLAY_PAUSE, 32);
     
-    // Quick 100ms delay to ensure signal finishes before returning response
+    // We just tell the manager to handle it!
+    sendIRCommand(cmd); 
+    
     delay(100); 
     server.send(200, "text/plain", "OK");
   } else {
@@ -597,4 +632,6 @@ inline void setupWebHandlers() {
   server.on("/set_sens", HTTP_GET, handleSetSens);
   server.on("/toggle_dev", HTTP_GET, handleToggleDev);
   server.on("/api/ir", HTTP_GET, handleIRCommand);
+  server.on("/api/learn", HTTP_GET, handleIRLearnCmd);
+  server.on("/api/learn_status", HTTP_GET, handleIRLearnCheck);
 }

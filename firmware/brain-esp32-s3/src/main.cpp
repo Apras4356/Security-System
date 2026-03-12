@@ -16,21 +16,15 @@
 #include <esp_wifi.h>
 #include <esp_wifi_types.h>
 #include <IRsend.h>
+#include <IRrecv.h>
+#include <IRutils.h>
 
 #include "Config.h"
 #include "Globals.h"
 #include "WebPages.h"
 #include "QRScanner.h"
+#include "IRManager.h"
 
-const uint16_t IR_LED_PIN = 4; // Change to whatever pin you used for the clear LED
-IRsend irsend(IR_LED_PIN);
-const uint32_t IR_POWER    = 0x8E7C23D;
-const uint32_t IR_VOL_UP   = 0x8E732CD;
-const uint32_t IR_VOL_DOWN = 0xFFFFFFFFFFFFFFFF;
-const uint32_t IR_PLAY_PAUSE = 0x8E70AF5;
-const uint32_t IR_MUTE     = 0x8E702FD;
-const uint32_t IR_PC_IN    = 0x8E78A75;
-const uint32_t IR_BT_IN    = 0x8E76897;
 bool devModeActive = false;
 int webSoundSensitivity = 50; 
 float audioDCOffset = 2048.0;
@@ -607,9 +601,8 @@ void setup() {
   Serial.begin(115200);
   delay(2000);
   server.begin();
-  irsend.begin();
+  setupIR();
 
-  // 1. Initialize Memory
   esp_err_t err = nvs_flash_init();
   if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
     ESP_ERROR_CHECK(nvs_flash_erase());
@@ -726,8 +719,8 @@ void setup() {
 }
 
 void loop() {
-  
   manageRelays();
+  handleIRLearning();
 
   for (int i = 0; i < zoneCount; i++) {
     if (systemZones[i].isActive && systemZones[i].ssPin >= 0) {
