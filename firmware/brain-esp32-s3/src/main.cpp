@@ -3,11 +3,9 @@
 #include <Adafruit_NeoPixel.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
-#include <WiFiClientSecure.h>
 #include <WebServer.h>
 #include <ESPmDNS.h>
 #include <time.h>
-#include <UniversalTelegramBot.h>
 #include <esp_now.h>
 #include <WiFiManager.h>
 #include <Preferences.h>
@@ -25,35 +23,14 @@
 #include "IRManager.h"
 #include "RFIDManager.h"
 #include "SecurityManager.h"
+#include "TelegramManager.h"
 
 bool devModeActive = false;
-int webSoundSensitivity = 50; 
-float audioDCOffset = 2048.0;
-float ambientNoise = 0.0;
 WebServer server(80);
-uint8_t router_mac[6];
-volatile float gaitDisturbanceScore = 0.0; 
+uint8_t router_mac[6]; 
 const float BASE_THRESHOLD = 0.85;
 const float MIN_THRESHOLD = 0.55;
 const float SENSITIVITY_BOOST = 0.08;
-SensingAP sensingTable[MAX_SENSING_APS];
-
-int activeAPCount = 1;
-float static_background[CSI_CHANNELS];
-float alpha = 0.05;
-
-volatile bool isAlarmActive = false;
-int silenceOffset = 3500; 
-int currentSensitivity = 0;
-bool isSirenDetected = false;
-volatile bool systemArmed = true;
-volatile bool isEnrollMode = false;
-
-String callMeBotUser = "";
-String targetSpeaker = "";
-String pendingUID = "";
-String telegramToken = "";
-String telegramChatID = "";
 
 extern void saveCards();
 extern void loadCards();
@@ -62,9 +39,6 @@ Preferences preferences;
 
 Adafruit_NeoPixel LED_RGB(1, 48, NEO_GRBW + NEO_KHZ800);
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-WiFiClientSecure secured_client;
-UniversalTelegramBot* botPtr;
-#define bot (*botPtr)
 
 TaskHandle_t SecurityTask;
 TaskHandle_t CommunicationTask;
@@ -96,139 +70,11 @@ int getBatteryPercentage(float voltage) {
   return 0;
 }
 
-float calculateGaitScore(int8_t* raw_csi_data, int len);
-
-void csi_rx_callback(void *ctx, wifi_csi_info_t *data) {
-  if (!systemArmed) return;
-
-  for (int i = 0; i < MAX_SENSING_APS; i++) {
-    if (sensingTable[i].active && memcmp(data->mac, sensingTable[i].mac, 6) == 0) {
-      float new_score = calculateGaitScore(data->buf, data->len);
-      sensingTable[i].lastScore = new_score;
-
-      float aggregate = 0;
-      int count = 0;
-      for (int j = 0; j < MAX_SENSING_APS; j++) {
-        if (sensingTable[j].active) {
-          aggregate += sensingTable[j].lastScore;
-          count++;
-        }
-      }
-      
-      gaitDisturbanceScore = (count > 0) ? (aggregate / count) : 0;
-      break; 
-    }
-  }
-}
-
-float calculateGaitScore(int8_t* raw_csi_data, int len) {
-    float current_variance = 0;
-    int count = 0;
-
-    // Iterate by 2 because data is interleaved I/Q pairs (Imaginary, Real)
-    for (int i = 0; i < (len - 1) && (i / 2) < CSI_CHANNELS; i += 2) {
-        int8_t imag = raw_csi_data[i];
-        int8_t real = raw_csi_data[i + 1];
-        
-        // Calculate true mathematical magnitude of the subcarrier
-        float amplitude = sqrt((imag * imag) + (real * real));
-        
-        int channel_idx = i / 2;
-
-        // Apply EMA filter
-        static_background[channel_idx] = (alpha * amplitude) + (1.0 - alpha) * static_background[channel_idx];
-        
-        // Find variance
-        float dynamic_signal = abs(amplitude - static_background[channel_idx]);
-
-        current_variance += dynamic_signal;
-        count++;
-    }
-
-    // You may need to adjust the '/ 20.0' divider now that the math is correct
-    float score = (count > 0) ? (current_variance / count) / 20.0 : 0; 
-    if (score > 1.0) score = 1.0;
-    
-    return score;
-}
-
-void addSensingAP(uint8_t* new_mac) {
-    if (activeAPCount >= MAX_SENSING_APS) {
-        Serial.println("Mesh Full!");
-        return;
-    }
-
-    for(int i=0; i < activeAPCount; i++) {
-        if(memcmp(sensingTable[i].mac, new_mac, 6) == 0) return;
-    }
-
-    memcpy(sensingTable[activeAPCount].mac, new_mac, 6);
-    sensingTable[activeAPCount].active = true;
-    sensingTable[activeAPCount].lastScore = 0.0;
-    
-    activeAPCount++;
-    
-    preferences.begin("gait_mesh", false);
-    preferences.putInt("ap_count", activeAPCount);
-    String key = "mac_" + String(activeAPCount-1);
-    preferences.putBytes(key.c_str(), new_mac, 6);
-    preferences.end();
-    
-    Serial.println("New AP added to Sensing Mesh.");
-}
-
-
 void passiveBuzzerBeep(int durationMs) {
     digitalWrite(BUZZER_PIN, HIGH);
     vTaskDelay(durationMs / portTICK_PERIOD_MS);
     digitalWrite(BUZZER_PIN, LOW);
 }
-
-void logRFIDEvent(String nameOrUID, String status) {
-  struct tm timeinfo;
-  String timeString = "Time Syncing...";
-  if (getLocalTime(&timeinfo)) {
-    char timeFmt[30];
-    strftime(timeFmt, sizeof(timeFmt), "%d/%m/%Y %H:%M:%S", &timeinfo);
-    timeString = String(timeFmt);
-  }
-  rfidLogs[logIndex] = timeString + " | " + nameOrUID + " | " + status;
-  logIndex = (logIndex + 1) % MAX_LOGS;
-}
-
-void sendNotification(String message) {
-  if (WiFi.status() == WL_CONNECTED) {
-    message.replace(" ", "%20");
-    String url = "https://api.callmebot.com/text.php?user=" + callMeBotUser + "&text=" + message;
-  }
-}
-
-void resetSystemState() {  
-  Serial.println("System Armed. Waiting for trip...");
-  Serial2.println("S");
-  LED_RGB.setPixelColor(0, LED_RGB.Color(0, 255, 0)); LED_RGB.show();
-  lcd.clear(); lcd.setCursor(0, 0); lcd.print("Working"); lcd.setCursor(0, 1); lcd.print("For now...");
-  isAlarmActive = false; systemArmed = true;
-}
-
-void disarmSystem() {
-  systemArmed = false;
-  if (isAlarmActive) { Serial2.println("S"); isAlarmActive = false; }
-  LED_RGB.setPixelColor(0, uint32_t(LED_RGB.Color(255, 165, 0))); LED_RGB.show();
-  lcd.clear(); lcd.setCursor(0, 0); lcd.print("System Disarmed"); lcd.setCursor(0, 1); lcd.print("Welcome Home");
-}
-
-void triggerSeinagermos(String reason) {
-  if(isAlarmActive) return;
-  isAlarmActive = true;
-  LED_RGB.setPixelColor(0, LED_RGB.Color(255, 0, 0)); LED_RGB.show();
-  lcd.clear(); lcd.setCursor(0, 0); lcd.print("System"); lcd.setCursor(0, 1); lcd.print("Triggered!");
-  Serial2.println("A");
-  sendNotification("SECURITY ALERT: " + reason);
-  bot.sendMessage(telegramChatID, "⚠️ ALARM TRIPPED: " + reason, "");
-  Serial.println("Alarm active via: " + reason);
-}
-
 
 void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
   memcpy(lastRemoteMac, mac, 6);
@@ -241,7 +87,7 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
   Serial.print("Remote Battery: "); Serial.println(incomingRead.voltage);
 
   if (incomingRead.voltage > 0.0 && incomingRead.voltage <= 3.1) {
-    bot.sendMessage(telegramChatID, "⚠️ *LOW BATTERY WARNING*\nGate Reader is at " + String(incomingRead.voltage) + "V.\nPlease recharge soon.", "Markdown");
+    sendTelegramMessage("⚠️ *LOW BATTERY WARNING*\nGate Reader is at " + String(incomingRead.voltage) + "V.\nPlease recharge soon.", "Markdown");
   }
 
   processCardStatus(String(espNowUID), true, 1);
@@ -257,224 +103,12 @@ void pollSmartBulb() {
   }
 }
 
-
-void securityLoop(void * pvParameters) {
-  for(;;) {
-    int sensorState = digitalRead(LASER_PIN);
-    int buttonState = digitalRead(RESET_BUTTON);
-    int soundLevel = analogRead(SOUND_PIN);
-    int potValue = analogRead(POT_PIN);
-
-    int soundThreshold = map(potValue, 0, 4095, 100, 2000);
-    currentSensitivity = soundThreshold;
-    
-    // 1. Track the exact "Silence" center point (DC Offset).
-    // Uses a very slow Exponential Moving Average (EMA) to find the middle of the audio wave.
-    audioDCOffset = (0.005 * soundLevel) + (0.995 * audioDCOffset);
-    
-    // 2. Find the absolute volume of this exact millisecond
-    float currentVolume = abs(soundLevel - audioDCOffset);
-    
-    // 3. Track the ambient background noise.
-    // Adapts moderately fast so it learns the room's noise level within seconds.
-    ambientNoise = (0.01 * currentVolume) + (0.99 * ambientNoise);
-
-    // 4. Calculate the Dynamic Threshold based on the Web Slider
-    // A slider value of 50 means "trigger when noise is 5.0x louder than the background hum"
-    float multiplier = webSoundSensitivity / 10.0; 
-    
-    // Add +150 as a hard absolute floor so absolute pin-drop silence doesn't cause a divide-by-zero false alarm
-    float dynamicThreshold = (ambientNoise * multiplier) + 150.0;
-
-    if (currentVolume > dynamicThreshold) {
-      digitalWrite(SOUND_LED_PIN, HIGH);
-      isSirenDetected = true;
-    } else {
-      digitalWrite(SOUND_LED_PIN, LOW);
-      isSirenDetected = false;
-    }
-
-    // --- DEVELOPER MODE: SERIAL PLOTTER OUTPUT ---
-    if (devModeActive) {
-      Serial.print("Volume:");
-      Serial.print(currentVolume);
-      Serial.print(", Threshold:");
-      Serial.print(dynamicThreshold);
-      Serial.print(", AmbientNoise:");
-      Serial.println(ambientNoise);
-    }
-
-    if (currentVolume > dynamicThreshold) {
-      digitalWrite(SOUND_LED_PIN, HIGH);
-      isSirenDetected = true;
-    } else {
-      digitalWrite(SOUND_LED_PIN, LOW);
-      isSirenDetected = false;
-    }
-    
-    if (systemArmed && !isAlarmActive) {
-      if (sensorState == HIGH) {
-        triggerSeinagermos("Laser Tripwire Broken");
-      }
-
-      float dynamicThreshold = BASE_THRESHOLD - ((activeAPCount - 1) * SENSITIVITY_BOOST);
-      if (dynamicThreshold < MIN_THRESHOLD) dynamicThreshold = MIN_THRESHOLD;
-
-      if (gaitDisturbanceScore > dynamicThreshold) {
-        String reason = "Gait Mesh Triggered (" + String(activeAPCount) + " APs)";
-        triggerSeinagermos(reason);
-      }
-    }
-
-    if (buttonState == LOW && !systemArmed && !isAlarmActive) {
-      lcd.clear(); 
-      lcd.setCursor(0, 0); 
-      lcd.print("Arming Mesh...");
-      
-      
-      for (int i = armingDelaySeconds; i > 0; i--) {
-        lcd.setCursor(0, 1); 
-        lcd.print(String(i) + "s | " + String(activeAPCount) + " APs active");
-        
-        LED_RGB.setPixelColor(0, uint32_t(LED_RGB.Color(0, 255, 255))); 
-        LED_RGB.show();
-        vTaskDelay(500 / portTICK_PERIOD_MS);
-        
-        LED_RGB.setPixelColor(0, uint32_t(LED_RGB.Color(0, 0, 0))); 
-        LED_RGB.show();
-        vTaskDelay(500 / portTICK_PERIOD_MS);
-      }
-      
-      passiveBuzzerBeep(600); 
-      resetSystemState();
-    }
-
-    vTaskDelay(50 / portTICK_PERIOD_MS);
-  }
-}
-
 void communicationLoop(void * pvParameters) {
   for(;;) {
     pollSmartBulb();      
     digitalWrite(WIFI_LED, WiFi.status() == WL_CONNECTED);
     server.handleClient();
     vTaskDelay(10 / portTICK_PERIOD_MS); 
-  }
-}
-
-void telegramLoop(void * pvParameters) {
-  for(;;) {
-    if (WiFi.status() == WL_CONNECTED) {
-      int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
-      
-      while(numNewMessages) {
-        for (int i = 0; i < numNewMessages; i++) {
-          String text = bot.messages[i].text;
-          String id = bot.messages[i].chat_id;
-          
-          if (id != telegramChatID) continue;
-
-          if (text == "/status") {
-            String st = systemArmed ? "🟢 ARMED" : "🟠 DISARMED";
-            if (isAlarmActive) st = "🔴 ALARM TRIGGERED!";
-            
-            String battStr = "Waiting for ESP-NOW data...";
-            if (remoteBatteryVoltage > 0.0) {
-              int pct = getBatteryPercentage(remoteBatteryVoltage);
-              battStr = String(remoteBatteryVoltage) + "V (" + String(pct) + "%)";
-              if (pct < 15) battStr += " ⚠️ LOW BATT";
-            }
-            bot.sendMessage(id, "*System Status:* " + st + "\n*Gate Battery:* " + battStr, "Markdown");
-          } 
-          else if (text == "/arm") {
-            if (!systemArmed) {
-              resetSystemState(); 
-              bot.sendMessage(id, "🔒 *System Armed.* The mesh is now active.", "Markdown");
-            } else {
-              bot.sendMessage(id, "ℹ️ System is already armed.", "");
-            }
-          } 
-          else if (text == "/disarm") {
-            if (systemArmed || isAlarmActive) {
-              disarmSystem(); 
-              bot.sendMessage(id, "🔓 *System Disarmed.* Welcome home.", "Markdown");
-            } else {
-              bot.sendMessage(id, "ℹ️ System is already disarmed.", "");
-            }
-          } 
-          else if (text == "/logs") {
-            String logMsg = "📋 *Recent System Logs:*\n\n";
-            bool hasLogs = false;
-            for (int j = 0; j < MAX_LOGS; j++) {
-              int idx = (logIndex - 1 - j + MAX_LOGS) % MAX_LOGS;
-              if (rfidLogs[idx] != "" && rfidLogs[idx].length() > 2) {
-                hasLogs = true;
-                logMsg += "• `" + rfidLogs[idx] + "`\n";
-              }
-            }
-            if (!hasLogs) logMsg += "_No logs recorded yet._";
-            bot.sendMessage(id, logMsg, "Markdown");
-          }
-          else if (text == "/cards") {
-            String msg = "💳 *Enrolled RFID Cards:*\n\n";
-            if (cardCount == 0) {
-              msg += "_No cards enrolled yet._";
-            } else {
-              for (int c = 0; c < cardCount; c++) {
-                msg += "👤 *" + enrolledCards[c].name + "*\n";
-                msg += "└ UID: `" + enrolledCards[c].uid + "`\n";
-                
-                String zNames = "";
-                bool first = true;
-                for(int z = 0; z < zoneCount; z++) {
-                  if(systemZones[z].isActive && (enrolledCards[c].allowedZones & (1 << z))) {
-                    if(!first) zNames += ", ";
-                    zNames += systemZones[z].name;
-                    first = false;
-                  }
-                }
-                if(zNames == "") zNames = "None";
-                msg += "└ Zones: " + zNames + "\n\n";
-              }
-            }
-            bot.sendMessage(id, msg, "Markdown");
-          }
-          else if (text == "/zones") {
-            String msg = "🚪 *Active Access Zones:*\n\n";
-            bool hasZones = false;
-            for (int z = 0; z < MAX_ZONES; z++) {
-              if (z < zoneCount && systemZones[z].isActive) {
-                hasZones = true;
-                msg += "📍 *Zone " + String(z) + ": " + systemZones[z].name + "*\n";
-                msg += "└ Reader SS Pin: `" + String(systemZones[z].ssPin) + "`\n";
-                msg += "└ Relay Pin: `" + String(systemZones[z].relayPin) + "`\n\n";
-              }
-            }
-            if (!hasZones) msg += "_No zones defined yet._";
-            bot.sendMessage(id, msg, "Markdown");
-          }
-          else if (text == "/help" || text == "/cmds" || text == "/start") {
-          String helpMsg = "🤖 *Security Bot Commands:*\n";
-          helpMsg += "Tap a button below, or type a command:\n";
-          helpMsg += "• /status - Check system & battery\n";
-          helpMsg += "• /arm - Arm the system\n";
-          helpMsg += "• /disarm - Disarm the system\n";
-          helpMsg += "• /logs - View recent events\n";
-          helpMsg += "• /cards - List authorized users\n";
-          helpMsg += "• /zones - List hardware zones";
-          
-          String keyboardJson = "[[\"/status\", \"/logs\"], [\"/arm\", \"/disarm\"], [\"/cards\", \"/zones\"]]";
-
-          bot.sendMessageWithReplyKeyboard(id, helpMsg, "Markdown", keyboardJson, true);
-          }
-          else {
-            bot.sendMessage(id, "I didn't understand that. Type /help to see the menu.", "");
-          }
-        }
-        numNewMessages = bot.getUpdates(bot.last_message_received + 1);
-      }
-    }
-    vTaskDelay(1500 / portTICK_PERIOD_MS); 
   }
 }
 
@@ -525,7 +159,7 @@ void setup() {
   }
 
   // 4. WiFi Connection
-  botPtr = new UniversalTelegramBot(telegramToken, secured_client);
+  setupTelegram();
   WiFiManager wm;
   lcd.clear();
   lcd.setCursor(0,0);
@@ -566,7 +200,7 @@ void setup() {
   }
 
   setupSecurity();
-  
+
   lcd.clear(); 
   lcd.setCursor(0,0); 
   lcd.print("WiFi + CSI Ready"); 
@@ -578,7 +212,6 @@ void setup() {
     esp_now_register_recv_cb(OnDataRecv);
   }
 
-  secured_client.setInsecure();
   configTzTime("EET-2EEST,M3.5.0/3,M10.5.0/4", "pool.ntp.org");
   MDNS.begin("seinagermos");
 

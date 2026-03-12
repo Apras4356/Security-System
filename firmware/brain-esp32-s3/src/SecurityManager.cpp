@@ -4,17 +4,17 @@
 #include <LiquidCrystal_I2C.h>
 #include <Adafruit_NeoPixel.h>
 #include "Config.h"  // Assuming pins like LASER_PIN, BUZZER_PIN are here
-#include "Globals.h" // Assuming SensingAP struct is here
+#include "Globals.h"
+#include "TelegramManager.h" // Assuming SensingAP struct is here
 
 // --- Link to Main System Peripherals (Temporary until they get their own managers) ---
 extern LiquidCrystal_I2C lcd;
 extern Adafruit_NeoPixel LED_RGB;
 extern void passiveBuzzerBeep(int durationMs);
 extern void sendNotification(String message);
-extern String telegramChatID;
+
 // We will properly route telegram later, but for now we just tell the compiler it exists:
-class UniversalTelegramBot; 
-extern UniversalTelegramBot* botPtr;
+
 
 // --- Internal Security Variables ---
 volatile bool systemArmed = true;
@@ -66,10 +66,8 @@ void triggerSeinagermos(String reason) {
     Serial2.println("A"); // Tell the sub-board to blast the alarm
     
     sendNotification("SECURITY ALERT: " + reason);
-    if (botPtr != nullptr) {
-        // We will fully clean up Telegram later, but this keeps your alert working
-        botPtr->sendMessage(telegramChatID, "⚠️ ALARM TRIPPED: " + reason, "");
-    }
+    sendTelegramMessage("⚠️ ALARM TRIPPED: " + reason, "");
+
     Serial.println("Alarm active via: " + reason);
 }
 

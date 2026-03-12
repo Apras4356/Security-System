@@ -10,16 +10,13 @@
 #include "IRManager.h"
 #include "RFIDManager.h"
 #include "SecurityManager.h"
+#include "TelegramManager.h"
 
 extern bool devModeActive;
 extern WebServer server;
 extern Preferences preferences;
 extern volatile bool isEnrollMode;
 extern bool isGreek;
-extern String telegramToken;
-extern String telegramChatID;
-extern String callMeBotUser;
-extern String targetSpeaker;
 extern void saveCards(); 
 extern volatile float remoteBatteryVoltage;
 extern int getBatteryPercentage(float voltage);
