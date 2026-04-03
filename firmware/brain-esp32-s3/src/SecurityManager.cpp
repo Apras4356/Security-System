@@ -72,19 +72,26 @@ void triggerSeinagermos(String reason) {
 }
 
 // --- CSI Math Functions ---
-float calculateGaitScore(int8_t* raw_csi_data, int len) {
+// Pass the specific AP's background array as a pointer
+float calculateGaitScore(int8_t* raw_csi_data, int len, float* ap_background) {
     float current_variance = 0;
     int count = 0;
+    
     for (int i = 0; i < (len - 1) && (i / 2) < CSI_CHANNELS; i += 2) {
         int8_t imag = raw_csi_data[i];
         int8_t real = raw_csi_data[i + 1];
         float amplitude = sqrt((imag * imag) + (real * real));
         int channel_idx = i / 2;
-        static_background[channel_idx] = (alpha * amplitude) + (1.0 - alpha) * static_background[channel_idx];
-        float dynamic_signal = abs(amplitude - static_background[channel_idx]);
+        
+        // Update this specific AP's baseline
+        ap_background[channel_idx] = (alpha * amplitude) + (1.0 - alpha) * ap_background[channel_idx];
+        
+        // Use fabs() for floating-point absolute values
+        float dynamic_signal = fabs(amplitude - ap_background[channel_idx]);
         current_variance += dynamic_signal;
         count++;
     }
+    
     float score = (count > 0) ? (current_variance / count) / 20.0 : 0; 
     if (score > 1.0) score = 1.0;
     return score;
@@ -94,10 +101,14 @@ void csi_rx_callback(void *ctx, wifi_csi_info_t *data) {
     if (!systemArmed) return;
     for (int i = 0; i < MAX_SENSING_APS; i++) {
         if (sensingTable[i].active && memcmp(data->mac, sensingTable[i].mac, 6) == 0) {
-            float new_score = calculateGaitScore(data->buf, data->len);
+            
+            // Pass the correct baseline array to the math function!
+            float new_score = calculateGaitScore(data->buf, data->len, sensingTable[i].static_background);
+            
             sensingTable[i].lastScore = new_score;
             float aggregate = 0;
             int count = 0;
+            
             for (int j = 0; j < MAX_SENSING_APS; j++) {
                 if (sensingTable[j].active) {
                     aggregate += sensingTable[j].lastScore;
@@ -133,11 +144,17 @@ void addSensingAP(uint8_t* new_mac) {
 }
 
 void setupSecurity() {
-    // Setup the CSI callback
-    wifi_csi_config_t csi_config = {}; 
+    // 1. Enable the CSI feature first
     esp_err_t csi_err = esp_wifi_set_csi(true);
+    
     if (csi_err == ESP_OK) {
+        // 2. Safely zero-initialize the config (disables MAC filters to hear all APs)
+        wifi_csi_config_t csi_config = {}; 
+        
+        // 3. Apply the empty config
         esp_wifi_set_csi_config(&csi_config);
+        
+        // 4. Register your callback
         esp_wifi_set_csi_rx_cb(csi_rx_callback, NULL);
         Serial.println("Gait Analysis Engine Started.");
     } else {
@@ -146,6 +163,7 @@ void setupSecurity() {
 }
 
 // --- The RTOS Task ---
+// --- The RTOS Task ---
 void securityLoop(void * pvParameters) {
     extern bool devModeActive; // Pull this from main for now
     
@@ -153,15 +171,21 @@ void securityLoop(void * pvParameters) {
         int sensorState = digitalRead(LASER_PIN);
         int buttonState = digitalRead(RESET_BUTTON);
         int soundLevel = analogRead(SOUND_PIN);
-        int potValue = analogRead(POT_PIN);
-
-        currentSensitivity = map(potValue, 0, 4095, 100, 2000);
         
+        // --- FIXED MICROPHONE MATH ---
+        // 1. Calculate the resting baseline (DC Offset)
         audioDCOffset = (0.005 * soundLevel) + (0.995 * audioDCOffset);
-        float currentVolume = abs(soundLevel - audioDCOffset);
+        
+        // 2. Calculate how loud the current sound is above the baseline
+        float currentVolume = fabs(soundLevel - audioDCOffset);
+        
+        // 3. Track ambient room noise slowly over time
         ambientNoise = (0.01 * currentVolume) + (0.99 * ambientNoise);
-        float multiplier = webSoundSensitivity / 10.0; 
-        float dynamicThreshold = (ambientNoise * multiplier) + 150.0;
+        
+        // 4. Use the Web Slider (20 to 150) as the explicit trigger threshold above ambient noise.
+        // If the slider is 20 (low), it takes very little noise above ambient to trigger.
+        // If the slider is 150 (high), it takes a loud noise to trigger.
+        float dynamicThreshold = ambientNoise + webSoundSensitivity;
 
         if (devModeActive) {
             Serial.print("Volume:"); Serial.print(currentVolume);
@@ -169,6 +193,7 @@ void securityLoop(void * pvParameters) {
             Serial.print(", AmbientNoise:"); Serial.println(ambientNoise);
         }
 
+        // Trigger the LED if the volume crosses the threshold
         if (currentVolume > dynamicThreshold) {
             digitalWrite(SOUND_LED_PIN, HIGH);
             isSirenDetected = true;
@@ -176,6 +201,7 @@ void securityLoop(void * pvParameters) {
             digitalWrite(SOUND_LED_PIN, LOW);
             isSirenDetected = false;
         }
+        // -----------------------------
         
         if (systemArmed && !isAlarmActive) {
             if (sensorState == HIGH) triggerSeinagermos("Laser Tripwire Broken");

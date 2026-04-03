@@ -57,6 +57,8 @@ uint8_t lastRemoteMac[6];
 bool isGreek = false;
 
 volatile float remoteBatteryVoltage = 0.0;
+volatile bool triggerLowBatteryWarning = false;
+volatile float lowBatteryVoltage = 0.0;
 int getBatteryPercentage(float voltage) {
   if (voltage <= 0.0) return 0;
   
@@ -83,14 +85,11 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
   strcpy(espNowUID, incomingRead.uid); 
   newRfidAvailable = true;             
   
-  Serial.print("ESP-NOW UID: "); Serial.println(espNowUID);
-  Serial.print("Remote Battery: "); Serial.println(incomingRead.voltage);
-
+  // Just set the flags here, do NOT send the message!
   if (incomingRead.voltage > 0.0 && incomingRead.voltage <= 3.1) {
-    sendTelegramMessage("⚠️ *LOW BATTERY WARNING*\nGate Reader is at " + String(incomingRead.voltage) + "V.\nPlease recharge soon.", "Markdown");
+    triggerLowBatteryWarning = true;
+    lowBatteryVoltage = incomingRead.voltage;
   }
-
-  processCardStatus(String(espNowUID), true, 1);
 }
 
 void pollSmartBulb() {
@@ -115,7 +114,6 @@ void communicationLoop(void * pvParameters) {
 void setup() {
   Serial.begin(115200);
   delay(2000);
-  server.begin();
   setupIR();
 
   esp_err_t err = nvs_flash_init();
@@ -159,7 +157,6 @@ void setup() {
   }
 
   // 4. WiFi Connection
-  setupTelegram();
   WiFiManager wm;
   lcd.clear();
   lcd.setCursor(0,0);
@@ -183,11 +180,13 @@ void setup() {
   
   
   // Register your nodes
+  setupTelegram();
   setupWebHandlers();
   setupQRHandlers();
   
   // Start the HTTP Server
   Serial.println("HTTP Server started on port 80.");
+  server.begin();
   // --------------------------------
 
   // 5. Advanced System Initializations

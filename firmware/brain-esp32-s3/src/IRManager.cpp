@@ -5,7 +5,7 @@
 #include <Preferences.h>
 
 // Hardware Pins
-const uint16_t IR_LED_PIN = 4;
+const uint16_t IR_LED_PIN = 35;
 const uint16_t IR_RECV_PIN = 15;
 
 IRsend irsend(IR_LED_PIN);

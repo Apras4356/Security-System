@@ -33,6 +33,7 @@ typedef struct {
   uint8_t mac[6];
   float lastScore;
   bool active;
+  float static_background[CSI_CHANNELS];
 } SensingAP;
 
 extern SensingAP sensingTable[MAX_SENSING_APS];

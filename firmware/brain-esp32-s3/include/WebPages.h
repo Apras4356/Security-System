@@ -20,9 +20,19 @@ extern bool isGreek;
 extern void saveCards(); 
 extern volatile float remoteBatteryVoltage;
 extern int getBatteryPercentage(float voltage);
-
-// Note: urlDecode and getPostArg functions were removed! 
-// WebServer handles URL decoding and POST arguments automatically.
+extern volatile bool isAlarmActive;
+// --- MISSING EXTERN DECLARATIONS ADDED HERE ---
+extern int zoneCount;
+extern AccessZone systemZones[MAX_ZONES];
+extern void initZoneReader(int index);
+extern int webSoundSensitivity;
+extern String telegramToken;
+extern String telegramChatID;
+extern String callMeBotUser;
+extern String targetSpeaker;
+extern String activeLearningButton;
+extern void sendIRCommand(String btn);
+// ----------------------------------------------
 
 inline String T(String en, String el) {
   return isGreek ? el : en;
@@ -36,7 +46,17 @@ inline String getStyles() {
   s += ".btn-orange{background-color: #e67e22; color: white;} ";
   s += "table {margin: 20px auto; border-collapse: collapse; width: 90%; max-width: 600px; background-color: #333;} ";
   s += "th, td {padding: 12px; border: 1px solid #555;} th {background-color: #444;} ";
-  s += "input[type='text'], input[type='password'], input[type='number'] { width: 90%; max-width: 300px; padding: 12px; margin: 10px 0; border-radius: 6px; border: 1px solid #555; background-color: #444; color: white; font-size: 16px; }</style>";
+  s += "input[type='text'], input[type='password'], input[type='number'] { width: 90%; max-width: 300px; padding: 12px; margin: 10px 0; border-radius: 6px; border: 1px solid #555; background-color: #444; color: white; font-size: 16px; } ";
+  
+  // --- CUSTOM PURPLE SLIDER CSS ---
+  s += "input[type='range'] { -webkit-appearance: none; width: 80%; max-width: 400px; background: transparent; margin: 15px 0; } ";
+  s += "input[type='range']:focus { outline: none; } ";
+  s += "input[type='range']::-webkit-slider-runnable-track { width: 100%; height: 10px; cursor: pointer; background: #f0f0f0; border-radius: 5px; } ";
+  s += "input[type='range']::-webkit-slider-thumb { height: 24px; width: 24px; border-radius: 50%; background: #9b59b6; cursor: pointer; -webkit-appearance: none; margin-top: -7px; box-shadow: 0 2px 5px rgba(0,0,0,0.5); } ";
+  s += "input[type='range']::-moz-range-track { width: 100%; height: 10px; cursor: pointer; background: #f0f0f0; border-radius: 5px; } ";
+  s += "input[type='range']::-moz-range-thumb { height: 24px; width: 24px; border-radius: 50%; background: #9b59b6; cursor: pointer; border: none; box-shadow: 0 2px 5px rgba(0,0,0,0.5); } ";
+  // --------------------------------
+
   s += ".remote-box {background-color: #2c3e50; padding: 20px 10px; border-radius: 12px; border: 2px solid #34495e; max-width: 380px; margin: 30px auto; box-shadow: 0 4px 8px rgba(0,0,0,0.5);} ";
   s += ".btn-ir {width: 42%; margin: 6px; padding: 12px 0; font-size: 16px; border-radius: 8px; font-weight: bold; cursor: pointer; border: none; color: white;} ";
   s += ".btn-ir:active {opacity: 0.7; transform: scale(0.95);} ";
@@ -73,15 +93,14 @@ inline void handleRoot() {
   html += "<h2>" + T("Alarm Blasting? ", "Χτυπάει; ") + "<span id='status-siren'>" + soundStatus + "</span></h2>";
   html += "<h2>" + T("Gate Battery: ", "Μπαταρία Πύλης: ") + "<span id='status-batt'>" + battDisplay + "</span></h2>";
   
-  html += "<a href='/alarm' class='btn btn-red'>" + T("START ALARM", "ΕΝΑΡΞΗ") + "</a><br>";
-  html += "<a href='/stop' class='btn btn-green'>" + T("STOP ALARM", "ΔΙΑΚΟΠΗ") + "</a><br><hr style='border-color:#444; width:80%; margin: 20px auto;'>";
-  html += "<a href='/logs' class='btn btn-blue'>" + T("LOGS", "ΙΣΤΟΡΙΚΟ") + "</a>";
+  html += "<button onclick='toggleAlarm(\"start\")' class='btn btn-red'>" + T("START ALARM", "ΕΝΑΡΞΗ") + "</button><br>";
+  html += "<button onclick='toggleAlarm(\"stop\")' class='btn btn-green'>" + T("STOP ALARM", "ΔΙΑΚΟΠΗ") + "</button><br><hr style='border-color:#444; width:80%; margin: 20px auto;'>";
   html += "<a href='/cards' class='btn btn-gray'>" + T("CARDS", "ΚΑΡΤΕΣ") + "</a><br>";
   html += "<a href='/zones' class='btn btn-blue'>" + T("ZONES", "ΖΩΝΕΣ") + "</a><br>";
   html += "<a href='/settings' class='btn btn-orange'>" + T("WIFI SETUP", "ΡΥΘΜΙΣΕΙΣ WIFI") + "</a>";
   html += "<a href='/help' class='btn btn-gray'>" + T("HELP", "ΒΟΗΘΕΙΑ") + "</a>";
 
-html += "<div id='learnOverlay'>📡 " + T("Waiting for remote...", "Αναμονή για τηλεχειριστήριο...") + "<br><span style='font-size:16px; color:#aaa;'>" + T("Point remote at ESP32 and press the button", "Στοχεύστε το ESP32 και πατήστε το κουμπί") + "</span></div>";
+  html += "<div id='learnOverlay'>📡 " + T("Waiting for remote...", "Αναμονή για τηλεχειριστήριο...") + "<br><span style='font-size:16px; color:#aaa;'>" + T("Point remote at ESP32 and press the button", "Στοχεύστε το ESP32 και πατήστε το κουμπί") + "</span></div>";
 
   // --- VIRTUAL REMOTE CONTROL UI ---
   html += "<div class='remote-box' id='remoteBox'>";
@@ -106,7 +125,30 @@ html += "<div id='learnOverlay'>📡 " + T("Waiting for remote...", "Αναμο�
   html += "<script>";
   html += "var isGr = " + String(isGreek ? "true" : "false") + ";";
   html += "var isLearningMode = false;";
+
+  html += "function toggleAlarm(action) {";
+  html += "  fetch(action === 'start' ? '/alarm' : '/stop').then(() => {";
+  html += "    setTimeout(refreshStatus, 200);"; // Wait 200ms for hardware to trigger, then update text
+  html += "  });";
+  html += "}";
+
+html += "function refreshStatus() {";
+  html += "  fetch('/status_data').then(r => r.json()).then(data => {";
+  html += "    var armSpan = document.getElementById('status-armed');";
+  html += "    var sirenSpan = document.getElementById('status-siren');";
   
+  // If alarm is ringing, show red ALARM text. Otherwise, show normal Armed/Disarmed status.
+  html += "    if (data.alarmActive) {";
+  html += "      armSpan.innerHTML = isGr ? '<span style=\"color:red; font-weight:bold;\">🔴 ΣΥΝΑΓΕΡΜΟΣ!</span>' : '<span style=\"color:red; font-weight:bold;\">🔴 ALARM TRIGGERED!</span>';";
+  html += "    } else {";
+  html += "      armSpan.innerHTML = data.armed ? (isGr ? '<span style=\"color:green;\">ΟΠΛΙΣΜΕΝΟ</span>' : '<span style=\"color:green;\">ARMED</span>') : (isGr ? '<span style=\"color:orange;\">ΑΦΟΠΛΙΣΜΕΝΟ</span>' : '<span style=\"color:orange;\">DISARMED</span>');";
+  html += "    }";
+  
+  // Update the siren text
+  html += "    sirenSpan.innerHTML = (data.siren || data.alarmActive) ? (isGr ? '<span style=\"color:red;\">ΝΑΙ</span>' : '<span style=\"color:red;\">YES</span>') : (isGr ? '<span style=\"color:green;\">ΟΧΙ</span>' : '<span style=\"color:green;\">NO</span>');";
+  html += "  });";
+  html += "}";
+
   html += "function toggleLearnMode() {";
   html += "  isLearningMode = !isLearningMode;";
   html += "  var btn = document.getElementById('learnBtn');";
@@ -146,11 +188,14 @@ html += "<div id='learnOverlay'>📡 " + T("Waiting for remote...", "Αναμο�
   html += "  }, 1000);"; // Check every 1 second
   html += "}";
 
+  html += "</script>";
+
   html += "<hr style='border-color:#444; width:80%; margin: 20px auto;'>";
   html += "<h2>" + T("Mic Sensitivity", "Ευαισθησία Μικροφώνου") + "</h2>";
   html += "<p style='color:#aaa; font-size:12px;'>" + T("Lower = More Sensitive. Higher = Less Sensitive.", "Μικρότερο = Πιο Ευαίσθητο. Μεγαλύτερο = Λιγότερο Ευαίσθητο.") + "</p>";
   
-  html += "<input type='range' min='20' max='150' value='" + String(webSoundSensitivity) + "' ";
+// 10 = Triggers on talking. 100 = Triggers on claps. 250 = Triggers on screams.
+  html += "<input type='range' min='10' max='250' value='" + String(webSoundSensitivity) + "' ";
   html += "onchange='fetch(\"/set_sens?val=\" + this.value)' style='width: 80%; max-width: 400px;'>";
   html += "<br><hr style='border-color:#444; width:80%; margin: 20px auto;'>";
   
@@ -212,30 +257,49 @@ inline void handleSettings() {
 
 inline void handleHelp() {
   String html = "<html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1'>" + getStyles() + "</head><body>";
-  html += "<h1>" + T("Setup & Help Guide", "Οδηγός Εγκατάστασης & Βοήθεια") + "</h1>";
-  html += "<div style='background:#333; padding:20px; max-width:600px; margin:0 auto; text-align:left; border-radius:8px; line-height: 1.6;'>";
-  html += "<h2 style='color:#2ecc71; margin-bottom: 5px;'>" + T("🎛️ Dashboard Controls", "🎛️ Έλεγχος Συστήματος") + "</h2>";
+  html += "<h1>" + T("Comprehensive Help Guide", "Πλήρης Οδηγός Συστήματος") + "</h1>";
+  html += "<div style='background:#333; padding:20px; max-width:750px; margin:0 auto; text-align:left; border-radius:8px; line-height: 1.6; font-size: 15px;'>";
+
+  // 1. Dashboard & Status
+  html += "<h2 style='color:#2ecc71; margin-bottom: 5px; border-bottom: 1px solid #555; padding-bottom: 5px;'>" + T("🎛️ Dashboard & Status", "🎛️ Πίνακας Ελέγχου & Κατάσταση") + "</h2>";
   html += "<ul style='margin-top: 5px;'>";
-  html += "<li><b>" + T("Start/Stop Alarm:", "Έναρξη/Διακοπή:") + "</b> " + T("Manually trigger or disarm the siren.", "Χειροκίνητη ενεργοποίηση ή αφοπλισμός της σειρήνας.") + "</li>";
-  html += "<li><b>" + T("Logs:", "Ιστορικό:") + "</b> " + T("View past alarm triggers and RFID scans.", "Δείτε προηγούμενα συμβάντα και σκαναρίσματα καρτών.") + "</li>";
-  html += "<li><b>" + T("Cards:", "Κάρτες:") + "</b> " + T("Manage authorized RFID keys.", "Διαχείριση εξουσιοδοτημένων καρτών RFID.") + "</li>";
+  html += "<li><b>" + T("System Status:", "Κατάσταση Συστήματος:") + "</b> " + T("Shows if the alarm is currently ARMED or DISARMED.", "Δείχνει αν ο συναγερμός είναι ΟΠΛΙΣΜΕΝΟΣ ή ΑΦΟΠΛΙΣΜΕΝΟΣ.") + "</li>";
+  html += "<li><b>" + T("Gate Battery:", "Μπαταρία Πύλης:") + "</b> " + T("Displays the voltage and percentage of the remote ESP-NOW gate reader.", "Δείχνει την τάση και το ποσοστό της μπαταρίας του απομακρυσμένου αναγνώστη πύλης (ESP-NOW).") + "</li>";
+  html += "<li><b>" + T("Start/Stop Alarm:", "Έναρξη/Διακοπή Συναγερμού:") + "</b> " + T("Manually trigger the siren or silence an active alarm.", "Χειροκίνητη ενεργοποίηση ή σίγαση της σειρήνας.") + "</li>";
+  html += "<li><b>" + T("Mic Sensitivity:", "Ευαισθησία Μικροφώνου:") + "</b> " + T("Slider to adjust the sound sensor. Lower values make it more sensitive to noise. Higher values require louder noises to trigger.", "Ρυθμιστικό για τον αισθητήρα ήχου. Μικρότερες τιμές τον κάνουν πιο ευαίσθητο στους θορύβους.") + "</li>";
   html += "</ul>";
-  html += "<h2 style='color:#3498db; margin-bottom: 5px;'>" + T("🤖 Notifications Setup", "🤖 Ειδοποιήσεις") + "</h2>";
+
+  // 2. Access Management (Cards & Zones)
+  html += "<h2 style='color:#3498db; margin-bottom: 5px; border-bottom: 1px solid #555; padding-bottom: 5px;'>" + T("🚪 Access Management (Cards & Zones)", "🚪 Διαχείριση Πρόσβασης (Κάρτες & Ζώνες)") + "</h2>";
   html += "<ul style='margin-top: 5px;'>";
-  html += "<li><b>Telegram Bot Token:</b> " + T("Search for <b>@BotFather</b> on Telegram and send <code>/newbot</code> to generate your token.", "Ψάξτε το <b>@BotFather</b> στο Telegram και στείλτε <code>/newbot</code> για να πάρετε το token.") + "</li>";
-  html += "<li><b>Chat ID:</b> " + T("Search for <b>@userinfobot</b> on Telegram to find your personal ID number.", "Ψάξτε το <b>@userinfobot</b> στο Telegram για να βρείτε το προσωπικό σας ID.") + "</li>";
-  html += "<li><b>CallMeBot Username:</b> " + T("To get phone calls during an alarm, message <b>@CallMeBot_API</b> on Telegram to activate, then enter your @username here.", "Για τηλεφωνικές κλήσεις, στείλτε μήνυμα στο <b>@CallMeBot_API</b> για έγκριση και βάλτε το @username σας εδώ.") + "</li>";
+  html += "<li><b>" + T("Zones Menu:", "Μενού Ζωνών:") + "</b> " + T("Define physical doors or readers. You must assign an SS/SDA Pin for the SPI RFID reader and a Relay Pin to unlock the door (-1 if no relay is connected).", "Ορίστε φυσικές πόρτες/αναγνώστες. Πρέπει να ορίσετε ένα SS/SDA Pin για τον αναγνώστη RFID και ένα Relay Pin για το ρελέ της πόρτας (-1 αν δεν υπάρχει).") + "</li>";
+  html += "<li><b>" + T("Cards Menu:", "Μενού Καρτών:") + "</b> " + T("Manage user access. Click <b>ADD NEW CARD</b>, tap the physical RFID tag on the reader, type the user's name, and check the boxes for which Zones they are allowed to open.", "Διαχείριση χρηστών. Πατήστε <b>ΠΡΟΣΘΗΚΗ</b>, σκανάρετε το RFID tag, δώστε όνομα και επιλέξτε ποιες Ζώνες επιτρέπεται να ανοίξει.") + "</li>";
+  html += "<li><b>" + T("Logs Menu:", "Μενού Ιστορικού:") + "</b> " + T("View a history of scanned cards, access denied events, and alarm triggers.", "Δείτε το ιστορικό από σκαναρίσματα καρτών, αρνήσεις πρόσβασης και ενεργοποιήσεις συναγερμού.") + "</li>";
   html += "</ul>";
-  html += "<h2 style='color:#9b59b6; margin-bottom: 5px;'>" + T("🔊 Bluetooth Speaker", "🔊 Ηχείο Bluetooth") + "</h2>";
+
+  // 3. Virtual Remote & IR Learning
+  html += "<h2 style='color:#f39c12; margin-bottom: 5px; border-bottom: 1px solid #555; padding-bottom: 5px;'>" + T("📡 Virtual Remote & IR Learning", "📡 Εικονικό Τηλεχειριστήριο & Εκμάθηση IR") + "</h2>";
   html += "<ul style='margin-top: 5px;'>";
-  html += "<li>" + T("Enter the EXACT pairing name of your Bluetooth speaker so the audio system can connect automatically.", "Βάλτε το ΑΚΡΙΒΕΣ όνομα του ηχείου σας ώστε το σύστημα ήχου να συνδεθεί αυτόματα.") + "</li>";
+  html += "<li><b>" + T("Speaker Remote:", "Τηλεχειριστήριο Ηχείου:") + "</b> " + T("Use the on-screen buttons to control your connected audio system via Infrared (IR).", "Χρησιμοποιήστε τα κουμπιά της οθόνης για να ελέγξετε το ηχοσύστημά σας μέσω υπερύθρων (IR).") + "</li>";
+  html += "<li><b>" + T("How to Learn IR Codes:", "Πώς να μάθετε κωδικούς IR:") + "</b> " + T("To teach the ESP32 a new button:<br>1. Click <b>ENTER LEARN MODE</b>.<br>2. Click the on-screen button you want to program.<br>3. Point your real remote at the ESP32's IR receiver and press the physical button.<br>4. The screen will alert you when it saves successfully.", "Για να μάθει το ESP32 ένα νέο κουμπί:<br>1. Πατήστε <b>ΛΕΙΤΟΥΡΓΙΑ ΕΚΜΑΘΗΣΗΣ</b>.<br>2. Πατήστε το κουμπί στην οθόνη.<br>3. Στοχεύστε το πραγματικό χειριστήριο στον δέκτη IR του ESP32 και πατήστε το φυσικό κουμπί.<br>4. Η οθόνη θα σας ειδοποιήσει μόλις αποθηκευτεί.") + "</li>";
   html += "</ul>";
-  html += "<h2 style='color:#e74c3c; margin-bottom: 5px;'>" + T("🌐 WiFi & Reset", "🌐 WiFi & Επαναφορά") + "</h2>";
+
+  // 4. Settings & Integrations
+  html += "<h2 style='color:#9b59b6; margin-bottom: 5px; border-bottom: 1px solid #555; padding-bottom: 5px;'>" + T("⚙️ Settings & Integrations", "⚙️ Ρυθμίσεις & Ενσωματώσεις") + "</h2>";
+  html += "<ul style='margin-top: 5px;'>";
+  html += "<li><b>" + T("Telegram Bot:", "Telegram Bot:") + "</b> " + T("Search <b>@BotFather</b> on Telegram and send <code>/newbot</code> to get your Token. Search <b>@userinfobot</b> to find your personal Chat ID.", "Ψάξτε το <b>@BotFather</b> στο Telegram και στείλτε <code>/newbot</code> για το Token. Ψάξτε το <b>@userinfobot</b> για το Chat ID σας.") + "</li>";
+  html += "<li><b>" + T("CallMeBot:", "CallMeBot:") + "</b> " + T("For phone call alerts during an alarm, message <b>@CallMeBot_API</b> on Telegram to authorize it, then enter your @username in the settings.", "Για τηλεφωνικές κλήσεις, στείλτε μήνυμα στο <b>@CallMeBot_API</b> στο Telegram για έγκριση, και βάλτε το @username σας στις ρυθμίσεις.") + "</li>";
+  html += "<li><b>" + T("Bluetooth Speaker:", "Ηχείο Bluetooth:") + "</b> " + T("Enter the EXACT pairing name of your Bluetooth speaker for automatic audio connection.", "Βάλτε το ΑΚΡΙΒΕΣ όνομα του ηχείου σας για αυτόματη σύνδεση ήχου.") + "</li>";
+  html += "</ul>";
+
+  // 5. WiFi & Reset
+  html += "<h2 style='color:#e74c3c; margin-bottom: 5px; border-bottom: 1px solid #555; padding-bottom: 5px;'>" + T("🌐 WiFi & Reset", "🌐 WiFi & Επαναφορά") + "</h2>";
   html += "<ul style='margin-top: 5px;'>";
   html += "<li>" + T("If you change your home router, go to Settings -> <b>Danger Zone</b> and click <b>Reset WiFi</b>.", "Αν αλλάξετε ρούτερ, πηγαίνετε στις Ρυθμίσεις -> <b>Επικίνδυνη Ζώνη</b> και πατήστε <b>Επαναφορά WiFi</b>.") + "</li>";
-  html += "<li>" + T("The system will reboot and broadcast a network called <code>SecuritySystem-Setup</code> (Password: <code>12345678</code>) so you can connect it to the new router.", "Το σύστημα θα κάνει επανεκκίνηση και θα δημιουργήσει το δίκτυο <code>SecuritySystem-Setup</code> (Κωδικός: <code>12345678</code>) για να βάλετε το νέο ρούτερ.") + "</li>";
+  html += "<li>" + T("The system will erase the network and reboot. Look for a network called <code>SecuritySystem-Setup</code> (Password: <code>12345678</code>) on your phone to connect it to the new router.", "Το σύστημα θα διαγράψει το δίκτυο και θα κάνει επανεκκίνηση. Ψάξτε το δίκτυο <code>SecuritySystem-Setup</code> (Κωδικός: <code>12345678</code>) στο κινητό σας για να το συνδέσετε στο νέο ρούτερ.") + "</li>";
   html += "</ul>";
-  html += "</div><br><a href='/' class='btn btn-gray'>" + T("BACK TO HOME", "ΕΠΙΣΤΡΟΦΗ") + "</a></body></html>";
+
+  html += "</div><br><a href='/' class='btn btn-gray'>" + T("BACK TO HOME", "ΕΠΙΣΤΡΟΦΗ") + "</a><br><br></body></html>";
   
   server.send(200, "text/html", html);
 }
@@ -245,14 +309,12 @@ extern void disarmSystem();
 
 inline void handleWebStart() {
   triggerSeinagermos("Web Interface Button");
-  server.sendHeader("Location", "/");
-  server.send(302, "text/plain", "");
+  server.send(200, "text/plain", "OK");
 }
 
 inline void handleWebStop() {
   disarmSystem();
-  server.sendHeader("Location", "/");
-  server.send(302, "text/plain", "");
+  server.send(200, "text/plain", "OK");
 }
 
 inline void handleEnroll() {
@@ -467,7 +529,7 @@ inline void handleSaveZone() {
       systemZones[slot].isActive = true;
       
       if (systemZones[slot].ssPin >= 0) {
-        initZoneReader(slot); // Tell the RFID Manager to do the heavy lifting!
+        initZoneReader(slot); 
       }
       if (systemZones[slot].relayPin >= 0) {
         pinMode(systemZones[slot].relayPin, OUTPUT);
@@ -535,6 +597,7 @@ inline void handleStatusData() {
   String json = "{";
   json += "\"armed\":" + String(systemArmed ? "true" : "false") + ",";
   json += "\"siren\":" + String(isSirenDetected ? "true" : "false") + ",";
+  json += "\"alarmActive\":" + String(isAlarmActive ? "true" : "false") + ",";
   json += "\"voltage\":" + String(remoteBatteryVoltage) + ",";
   json += "\"battPct\":" + String(getBatteryPercentage(remoteBatteryVoltage));
   json += "}";
@@ -558,9 +621,8 @@ inline void handleSetSens() {
 
 inline void handleToggleDev() {
   extern bool devModeActive;
-  devModeActive = !devModeActive; // Flip the state
+  devModeActive = !devModeActive; 
   
-  // Refresh the page so the button changes color
   server.sendHeader("Location", "/");
   server.send(302, "text/plain", "");
 }
@@ -576,7 +638,6 @@ inline void handleIRLearnCmd() {
 }
 
 inline void handleIRLearnCheck() {
-  // If the main loop cleared the variable, learning is done!
   if (activeLearningButton == "") {
     server.send(200, "text/plain", "DONE");
   } else {
@@ -589,7 +650,6 @@ inline void handleIRCommand() {
     String cmd = server.arg("cmd");
     Serial.println("Web Remote triggered: " + cmd);
     
-    // We just tell the manager to handle it!
     sendIRCommand(cmd); 
     
     delay(100); 
