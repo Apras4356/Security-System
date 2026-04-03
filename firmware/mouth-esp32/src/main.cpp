@@ -10,6 +10,11 @@ volatile bool isAlarmTriggered = false;
 uint32_t current_pcm_index = 0;
 String targetSpeaker = "";
 
+// Flags and timers for safely updating LEDs outside of the Bluetooth callback
+volatile bool newlyConnected = false;
+unsigned long ledTurnOffTime = 0;
+bool isLedGreen = false;
+
 Adafruit_NeoPixel LED_RGB(1, 22, NEO_GRBW + NEO_KHZ800);
 BluetoothA2DPSource a2dp_source;
 Preferences preferences;
@@ -39,13 +44,10 @@ int32_t get_audio_data(Frame *data, int32_t frameCount) {
   return frameCount;
 }
 
+// Callback is now lightning fast and non-blocking
 void connection_state_changed(esp_a2d_connection_state_t state, void *ptr) {
   if (state == ESP_A2D_CONNECTION_STATE_CONNECTED) {
-    Serial.println(">>> BLUETOOTH CONNECTED SUCCESSFULLY! <<<");
-    LED_RGB.setPixelColor(0, LED_RGB.Color(0, 255, 0));
-    LED_RGB.show();
-    delay(1000);
-    LED_RGB.clear(); LED_RGB.show();
+    newlyConnected = true; // Flag the main loop to handle the LED
   } else if (state == ESP_A2D_CONNECTION_STATE_DISCONNECTED) {
     Serial.println(">>> BLUETOOTH DISCONNECTED! Scanning... <<<");
   }
@@ -78,6 +80,28 @@ void setup() {
 }
 
 void loop() {
+  // Safely handle the successful connection LED animation here
+  if (newlyConnected) {
+    newlyConnected = false;
+    Serial.println(">>> BLUETOOTH CONNECTED SUCCESSFULLY! <<<");
+    LED_RGB.setPixelColor(0, LED_RGB.Color(0, 255, 0));
+    LED_RGB.show();
+    
+    isLedGreen = true;
+    ledTurnOffTime = millis() + 1000; // Set timer for 1 second from now
+  }
+
+  // Turn off the green LED after 1 second without using delay()
+  if (isLedGreen && millis() > ledTurnOffTime) {
+    isLedGreen = false;
+    // Only clear if the alarm hasn't been triggered in the last second
+    if (!isAlarmTriggered) { 
+      LED_RGB.clear(); 
+      LED_RGB.show();
+    }
+  }
+
+  // Handle Serial Commands
   if (Serial2.available()) {
     String command = Serial2.readStringUntil('\n');
     command.trim(); 
@@ -86,12 +110,14 @@ void loop() {
       Serial.println("BRAIN SAID ALARM!");
       current_pcm_index = 0; 
       isAlarmTriggered = true;
-      LED_RGB.setPixelColor(0, LED_RGB.Color(255, 0, 0)); LED_RGB.show();
+      LED_RGB.setPixelColor(0, LED_RGB.Color(255, 0, 0)); 
+      LED_RGB.show();
     }
     else if (command == "S") {
       Serial.println("BRAIN SAID STOP.");
       isAlarmTriggered = false; 
-      LED_RGB.clear(); LED_RGB.show();
+      LED_RGB.clear(); 
+      LED_RGB.show();
     }
     else if (command.startsWith("N:")) {
       String newSpeaker = command.substring(2); 
@@ -106,5 +132,6 @@ void loop() {
       ESP.restart(); 
     }
   }
+  
   delay(10);
 }
