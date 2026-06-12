@@ -91,7 +91,7 @@ void setup() {
     while (millis() - wakeTime < 5000) {
         if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
             for (byte i = 0; i < rfid.uid.size; i++) {
-                scannedUID += String(rfid.uid.uidByte[i] < 0x10 ? " 0" : " ");
+                scannedUID += String(rfid.uid.uidByte[i] < 0x10 ? "0" : "");
                 scannedUID += String(rfid.uid.uidByte[i], HEX);
             }
             scannedUID.trim();
