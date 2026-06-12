@@ -2,6 +2,8 @@
 #include <WiFiClientSecure.h>
 #include <UniversalTelegramBot.h>
 #include <WiFi.h>
+#include <esp_wifi.h>
+#include <HTTPClient.h>
 
 // Include your other managers to get their data!
 #include "SecurityManager.h"
@@ -14,6 +16,9 @@ extern volatile float remoteBatteryVoltage;
 extern int getBatteryPercentage(float voltage);
 extern volatile bool triggerLowBatteryWarning;
 extern volatile float lowBatteryVoltage;
+
+volatile bool pendingAlarmNotification = false;
+char alarmReason[128] = "";
 
 // --- Internal Telegram Variables ---
 String telegramToken = "";
@@ -44,7 +49,15 @@ void sendNotification(String message) {
     if (WiFi.status() == WL_CONNECTED && callMeBotUser != "") {
         message.replace(" ", "%20");
         String url = "https://api.callmebot.com/text.php?user=" + callMeBotUser + "&text=" + message;
-        // Requires <HTTPClient.h> to actually execute
+        HTTPClient http;
+        http.begin(url);
+        int httpCode = http.GET();
+        if (httpCode > 0) {
+            Serial.println("CallMeBot sent: " + String(httpCode));
+        } else {
+            Serial.println("CallMeBot failed: " + http.errorToString(httpCode));
+        }
+        http.end();
     }
 }
 
@@ -62,7 +75,15 @@ void telegramLoop(void * pvParameters) {
             triggerLowBatteryWarning = false; 
         }
 
+        if (pendingAlarmNotification) {
+            String reason(alarmReason);
+            pendingAlarmNotification = false;
+            sendNotification("SECURITY ALERT: " + reason);
+            sendTelegramMessage("⚠️ ALARM TRIPPED: " + reason, "");
+        }
+
         if (WiFi.status() == WL_CONNECTED && telegramToken != "") {
+            esp_wifi_set_csi(false);
             int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
             
             while(numNewMessages) {
@@ -114,6 +135,43 @@ void telegramLoop(void * pvParameters) {
                         }
                     } 
                     // ... [Keep your other commands (/logs, /cards, /zones) exactly as they were] ...
+                    else if (text == "/logs") {
+                        String logMsg = "📋 *Recent Events:*\n";
+                        bool hasLogs = false;
+                        for (int i = 0; i < MAX_LOGS; i++) {
+                            int idx = (logIndex - 1 - i + MAX_LOGS) % MAX_LOGS;
+                            if (rfidLogs[idx] != "" && rfidLogs[idx].length() > 2) {
+                                hasLogs = true;
+                                logMsg += "• " + rfidLogs[idx] + "\n";
+                            }
+                        }
+                        if (!hasLogs) logMsg += "_No logs recorded yet._";
+                        bot.sendMessage(id, logMsg, "Markdown");
+                    }
+                    else if (text == "/cards") {
+                        String cardMsg = "🪪 *Enrolled Cards:*\n";
+                        if (cardCount == 0) {
+                            cardMsg += "_No cards enrolled._";
+                        } else {
+                            for (int i = 0; i < cardCount; i++) {
+                                String status = enrolledCards[i].isActive ? "✅" : "❌";
+                                cardMsg += status + " " + enrolledCards[i].name + " (`" + enrolledCards[i].uid + "`)\n";
+                            }
+                        }
+                        bot.sendMessage(id, cardMsg, "Markdown");
+                    }
+                    else if (text == "/zones") {
+                        String zoneMsg = "🚪 *Access Zones:*\n";
+                        bool hasZones = false;
+                        for (int i = 0; i < zoneCount; i++) {
+                            if (systemZones[i].isActive) {
+                                hasZones = true;
+                                zoneMsg += "• *" + systemZones[i].name + "* (SS:" + String(systemZones[i].ssPin) + " Relay:" + String(systemZones[i].relayPin) + ")\n";
+                            }
+                        }
+                        if (!hasZones) zoneMsg += "_No zones defined._";
+                        bot.sendMessage(id, zoneMsg, "Markdown");
+                    }
                     else if (text == "/help" || text == "/cmds" || text == "/start") {
                         String helpMsg = "🤖 *Security Bot Commands:*\nTap a button below, or type a command:\n";
                         helpMsg += "• /status - Check system & battery\n";
@@ -132,6 +190,7 @@ void telegramLoop(void * pvParameters) {
                 }
                 numNewMessages = bot.getUpdates(bot.last_message_received + 1);
             }
+            esp_wifi_set_csi(true);
         }
         vTaskDelay(1500 / portTICK_PERIOD_MS); 
     }

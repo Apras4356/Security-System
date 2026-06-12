@@ -1,7 +1,8 @@
 #pragma once
 #include <Arduino.h>
-#include <WebServer.h>
 #include <Preferences.h>
+#include <WebServer.h>
+
 
 #include "Config.h"
 
@@ -9,8 +10,13 @@ extern bool devModeActive;
 extern volatile bool isAlarmActive;
 extern volatile bool systemArmed;
 extern volatile bool isEnrollMode;
+extern volatile int pendingArmTimer;
 extern String pendingUID;
 extern bool isGreek;
+
+extern volatile bool pendingAlarmNotification;
+extern char alarmReason[128];
+extern bool laserEnabled;
 
 extern WebServer server;
 extern Preferences preferences;
@@ -38,8 +44,8 @@ typedef struct {
 
 extern SensingAP sensingTable[MAX_SENSING_APS];
 
-extern RFIDCard enrolledCards[MAX_CARDS]; 
-extern String rfidLogs[MAX_LOGS];         
+extern RFIDCard enrolledCards[MAX_CARDS];
+extern String rfidLogs[MAX_LOGS];
 
 extern int cardCount;
 extern int logIndex;

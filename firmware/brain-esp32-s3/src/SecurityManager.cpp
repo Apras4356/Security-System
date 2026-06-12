@@ -11,13 +11,13 @@
 extern LiquidCrystal_I2C lcd;
 extern Adafruit_NeoPixel LED_RGB;
 extern void passiveBuzzerBeep(int durationMs);
-extern void sendNotification(String message);
+extern void passiveBuzzerBeep(int durationMs);
 
 // We will properly route telegram later, but for now we just tell the compiler it exists:
 
 
 // --- Internal Security Variables ---
-volatile bool systemArmed = true;
+volatile bool systemArmed = false;
 volatile bool isAlarmActive = false;
 bool isSirenDetected = false;
 int webSoundSensitivity = 50; 
@@ -34,7 +34,6 @@ const float BASE_THRESHOLD = 0.85;
 const float MIN_THRESHOLD = 0.55;
 const float SENSITIVITY_BOOST = 0.08;
 SensingAP sensingTable[MAX_SENSING_APS];
-float static_background[CSI_CHANNELS];
 float alpha = 0.05;
 
 // --- Implementations ---
@@ -65,8 +64,8 @@ void triggerSeinagermos(String reason) {
     lcd.clear(); lcd.setCursor(0, 0); lcd.print("System"); lcd.setCursor(0, 1); lcd.print("Triggered!");
     Serial2.println("A"); // Tell the sub-board to blast the alarm
     
-    sendNotification("SECURITY ALERT: " + reason);
-    sendTelegramMessage("⚠️ ALARM TRIPPED: " + reason, "");
+    strlcpy(alarmReason, reason.c_str(), sizeof(alarmReason));
+    pendingAlarmNotification = true;
 
     Serial.println("Alarm active via: " + reason);
 }
@@ -99,10 +98,19 @@ float calculateGaitScore(int8_t* raw_csi_data, int len, float* ap_background) {
 
 void csi_rx_callback(void *ctx, wifi_csi_info_t *data) {
     if (!systemArmed) return;
+
+    // --- THE FIX: THROTTLE THE CALLBACK ---
+    // Only process 1 packet every 50 milliseconds (20 Hz max).
+    // This allows the Wi-Fi driver to handle Telegram/ESP-NOW traffic safely!
+    static unsigned long last_csi_time = 0;
+    if (millis() - last_csi_time < 50) return; 
+    last_csi_time = millis();
+    // --------------------------------------
+
     for (int i = 0; i < MAX_SENSING_APS; i++) {
         if (sensingTable[i].active && memcmp(data->mac, sensingTable[i].mac, 6) == 0) {
             
-            // Pass the correct baseline array to the math function!
+            // Pass the correct baseline array to the math function
             float new_score = calculateGaitScore(data->buf, data->len, sensingTable[i].static_background);
             
             sensingTable[i].lastScore = new_score;
@@ -143,18 +151,42 @@ void addSensingAP(uint8_t* new_mac) {
     Serial.println("New AP added to Sensing Mesh.");
 }
 
+void loadSensingAPs() {
+    Preferences prefs;
+    prefs.begin("gait_mesh", true);
+    int savedCount = prefs.getInt("ap_count", 0);
+    
+    // Start from index 1 because index 0 is the router (set in main.cpp setup)
+    for (int i = 1; i < savedCount && i < MAX_SENSING_APS; i++) {
+        String key = "mac_" + String(i);
+        if (prefs.getBytes(key.c_str(), sensingTable[i].mac, 6) == 6) {
+            sensingTable[i].active = true;
+            sensingTable[i].lastScore = 0.0;
+            activeAPCount = i + 1;
+        }
+    }
+    prefs.end();
+    Serial.println("Loaded " + String(activeAPCount) + " Sensing APs from memory.");
+}
+
 void setupSecurity() {
-    // 1. Enable the CSI feature first
+    loadSensingAPs();
+    
     esp_err_t csi_err = esp_wifi_set_csi(true);
     
     if (csi_err == ESP_OK) {
-        // 2. Safely zero-initialize the config (disables MAC filters to hear all APs)
-        wifi_csi_config_t csi_config = {}; 
+        // Explicitly set the safe default flags for ESP32-S3
+        wifi_csi_config_t csi_config = {
+            .lltf_en = true,
+            .htltf_en = true,
+            .stbc_htltf2_en = true,
+            .ltf_merge_en = true,
+            .channel_filter_en = false,
+            .manu_scale = false,
+            .shift = false
+        };
         
-        // 3. Apply the empty config
         esp_wifi_set_csi_config(&csi_config);
-        
-        // 4. Register your callback
         esp_wifi_set_csi_rx_cb(csi_rx_callback, NULL);
         Serial.println("Gait Analysis Engine Started.");
     } else {
@@ -163,21 +195,36 @@ void setupSecurity() {
 }
 
 // --- The RTOS Task ---
-// --- The RTOS Task ---
 void securityLoop(void * pvParameters) {
     extern bool devModeActive; // Pull this from main for now
     
     for(;;) {
         int sensorState = digitalRead(LASER_PIN);
         int buttonState = digitalRead(RESET_BUTTON);
-        int soundLevel = analogRead(SOUND_PIN);
+        
+        // --- IMPROVED MICROPHONE SAMPLING ---
+        // Sampling exactly once every 50ms misses 95% of the audio wave.
+        // We do a quick 10ms tight loop to catch the peak of the sound wave.
+        unsigned long startMillis = millis();
+        int maxRead = 0;
+        int minRead = 4095;
+        while (millis() - startMillis < 10) {
+            int r = analogRead(SOUND_PIN);
+            if (r > maxRead) maxRead = r;
+            if (r < minRead) minRead = r;
+        }
+        
+        // The true sound level is the peak-to-peak amplitude.
+        // We use the raw maximum to feed into the DC offset tracker.
+        int soundLevel = maxRead;
         
         // --- FIXED MICROPHONE MATH ---
         // 1. Calculate the resting baseline (DC Offset)
         audioDCOffset = (0.005 * soundLevel) + (0.995 * audioDCOffset);
         
-        // 2. Calculate how loud the current sound is above the baseline
-        float currentVolume = fabs(soundLevel - audioDCOffset);
+        // 2. Calculate the peak amplitude above the baseline
+        float currentVolume = (maxRead - minRead) / 2.0; 
+        if (currentVolume < 0) currentVolume = 0;
         
         // 3. Track ambient room noise slowly over time
         ambientNoise = (0.01 * currentVolume) + (0.99 * ambientNoise);
@@ -204,7 +251,7 @@ void securityLoop(void * pvParameters) {
         // -----------------------------
         
         if (systemArmed && !isAlarmActive) {
-            if (sensorState == HIGH) triggerSeinagermos("Laser Tripwire Broken");
+            if (laserEnabled && sensorState == HIGH) triggerSeinagermos("Laser Tripwire Broken");
 
             float dynamicCsiThreshold = BASE_THRESHOLD - ((activeAPCount - 1) * SENSITIVITY_BOOST);
             if (dynamicCsiThreshold < MIN_THRESHOLD) dynamicCsiThreshold = MIN_THRESHOLD;
@@ -215,11 +262,13 @@ void securityLoop(void * pvParameters) {
             }
         }
 
-        if (buttonState == LOW && !systemArmed && !isAlarmActive) {
+        if ((buttonState == LOW || pendingArmTimer > 0) && !systemArmed && !isAlarmActive) {
+            int countdown = (pendingArmTimer > 0) ? pendingArmTimer : 10;
+            pendingArmTimer = -1; // Reset it immediately
+            
             lcd.clear(); lcd.setCursor(0, 0); lcd.print("Arming Mesh...");
             
-            // Assuming armingDelaySeconds is in Config.h
-            for (int i = 10; i > 0; i--) { 
+            for (int i = countdown; i > 0; i--) { 
                 lcd.setCursor(0, 1); lcd.print(String(i) + "s | " + String(activeAPCount) + " APs active");
                 LED_RGB.setPixelColor(0, uint32_t(LED_RGB.Color(0, 255, 255))); LED_RGB.show();
                 vTaskDelay(500 / portTICK_PERIOD_MS);
