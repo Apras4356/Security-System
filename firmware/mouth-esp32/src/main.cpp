@@ -21,19 +21,17 @@ Preferences preferences;
 
 int32_t get_audio_data(Frame *data, int32_t frameCount) {
   if (!isAlarmTriggered) {
-    for (int i = 0; i < frameCount; i++) {
-      data[i].channel1 = 0;
-      data[i].channel2 = 0;
-    }
+    memset(data, 0, frameCount * sizeof(Frame));
     return frameCount; 
   }
 
-  Frame* pcm_frames = (Frame*) seinagermos;
   uint32_t total_frames = seinagermos_len / 4;
 
   for (int i = 0; i < frameCount; i++) {
-    data[i].channel1 = pcm_frames[current_pcm_index].channel1;
-    data[i].channel2 = pcm_frames[current_pcm_index].channel2;
+    uint32_t byte_idx = current_pcm_index * 4;
+    
+    data[i].channel1 = (int16_t)(seinagermos[byte_idx] | (seinagermos[byte_idx + 1] << 8));
+    data[i].channel2 = (int16_t)(seinagermos[byte_idx + 2] | (seinagermos[byte_idx + 3] << 8));
     
     current_pcm_index++;
 
@@ -69,7 +67,6 @@ void setup() {
   Serial.println("Saved Speaker Name: [" + targetSpeaker + "]");
 
   a2dp_source.set_on_connection_state_changed(connection_state_changed);
-  a2dp_source.set_volume(100);
 
   if (targetSpeaker != "") {
     Serial.println("Starting Bluetooth stack...");
