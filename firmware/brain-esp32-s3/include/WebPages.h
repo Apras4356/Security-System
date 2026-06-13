@@ -144,7 +144,7 @@ inline void handleRoot() {
           T("sec", "δευτ") + "</span>";
   html += "<button onclick='armSystem()' class='btn btn-blue' style='padding: "
           "10px 20px; font-size:16px; margin:0;'>" +
-          T("ARM MESH", "ΟΠΛΙΣΜΟΣ") + "</button></div><br>";
+          T("ARM", "ΟΠΛΙΣΜΟΣ") + "</button></div><br>";
 
   html += "<button onclick='toggleAlarm(\"stop\")' class='btn btn-green'>" +
           T("STOP ALARM", "ΔΙΑΚΟΠΗ") +
@@ -154,6 +154,9 @@ inline void handleRoot() {
           "</a><br>";
   html += "<a href='/zones' class='btn btn-blue'>" + T("ZONES", "ΖΩΝΕΣ") +
           "</a><br>";
+  html += "<a href='/radar' class='btn' style='background-color:#9b59b6; "
+          "color:white;'>" +
+          T("RADAR", "ΡΑΝΤΑΡ") + "</a><br>";
   html += "<a href='/settings' class='btn btn-orange'>" +
           T("SETUP", "ΡΥΘΜΙΣΕΙΣ") + "</a>";
   html +=
@@ -1053,6 +1056,393 @@ inline void handleIRCommand() {
   }
 }
 
+// --- CSI Data JSON Endpoint ---
+inline void handleCSIData() {
+  String json = "{";
+  json += "\"armed\":" + String(systemArmed ? "true" : "false") + ",";
+  json += "\"gaitScore\":" + String(gaitDisturbanceScore, 3) + ",";
+
+  float dynamicThreshold = 0.85 - ((activeAPCount - 1) * 0.08);
+  if (dynamicThreshold < 0.55)
+    dynamicThreshold = 0.55;
+  json += "\"threshold\":" + String(dynamicThreshold, 3) + ",";
+  json += "\"apCount\":" + String(activeAPCount) + ",";
+  json += "\"aps\":[";
+
+  bool first = true;
+  for (int i = 0; i < MAX_SENSING_APS; i++) {
+    if (sensingTable[i].active) {
+      if (!first)
+        json += ",";
+      first = false;
+      json += "{\"id\":" + String(i);
+
+      char macStr[18];
+      snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+               sensingTable[i].mac[0], sensingTable[i].mac[1],
+               sensingTable[i].mac[2], sensingTable[i].mac[3],
+               sensingTable[i].mac[4], sensingTable[i].mac[5]);
+      json += ",\"mac\":\"" + String(macStr) + "\"";
+      json += ",\"score\":" + String(sensingTable[i].lastScore, 3);
+
+      // Send 16 evenly-spaced channels out of 64 to keep payload small
+      json += ",\"ch\":[";
+      for (int c = 0; c < 64; c += 4) {
+        if (c > 0)
+          json += ",";
+        json += String(csiChannelAmplitudes[i][c], 2);
+      }
+      json += "]";
+      json += "}";
+    }
+  }
+
+  json += "]}";
+  server.send(200, "application/json", json);
+}
+
+// --- 3D Radar Visualization Page ---
+inline void handleRadar() {
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send(200, "text/html", "");
+
+  // --- HTML Head ---
+  server.sendContent(
+      "<!DOCTYPE html><html><head><meta charset='UTF-8'>"
+      "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+      "<title>CSI Radar - Seinagermos</title>"
+      "<style>"
+      "*{margin:0;padding:0;box-sizing:border-box}"
+      "body{background:#0a0a0f;overflow:hidden;font-family:'Segoe "
+      "UI',Arial,sans-serif;color:#eee}"
+      "#hud{position:fixed;top:12px;left:12px;z-index:10;pointer-events:none}"
+      ".hud-card{background:rgba(15,15,25,0.85);border:1px solid "
+      "rgba(155,89,182,0.4);"
+      "border-radius:10px;padding:12px "
+      "16px;margin-bottom:8px;backdrop-filter:blur(8px);"
+      "min-width:220px;pointer-events:auto}"
+      ".hud-title{font-size:11px;text-transform:uppercase;letter-spacing:2px;"
+      "color:#9b59b6;margin-bottom:6px}"
+      ".hud-val{font-size:28px;font-weight:700}"
+      ".hud-sub{font-size:11px;color:#888;margin-top:2px}"
+      ".bar-row{display:flex;align-items:flex-end;height:40px;gap:1px;margin-"
+      "top:6px}"
+      ".bar{flex:1;background:#9b59b6;min-width:2px;border-radius:1px 1px 0 "
+      "0;transition:height .15s}"
+      "#legend{position:fixed;bottom:12px;left:12px;z-index:10}"
+      ".legend-card{background:rgba(15,15,25,0.85);border:1px solid "
+      "rgba(155,89,182,0.3);"
+      "border-radius:10px;padding:10px 14px;backdrop-filter:blur(8px)}"
+      ".legend-item{display:flex;align-items:center;gap:8px;font-size:11px;"
+      "color:#aaa;margin:3px 0}"
+      ".legend-dot{width:10px;height:10px;border-radius:50%}"
+      "#back-btn{position:fixed;top:12px;right:12px;z-index:10;background:rgba("
+      "15,15,25,0.85);"
+      "border:1px solid rgba(155,89,182,0.4);border-radius:8px;padding:8px "
+      "16px;"
+      "color:#9b59b6;text-decoration:none;font-size:13px;font-weight:600;"
+      "cursor:pointer;"
+      "backdrop-filter:blur(8px);transition:all .2s}"
+      "#back-btn:hover{background:rgba(155,89,182,0.2);color:#fff}"
+      "#status-pill{position:fixed;top:12px;right:100px;z-index:10;"
+      "border-radius:20px;padding:6px 14px;font-size:11px;font-weight:700;"
+      "letter-spacing:1px;backdrop-filter:blur(8px)}"
+      ".armed{background:rgba(46,204,113,0.2);border:1px solid "
+      "#2ecc71;color:#2ecc71}"
+      ".disarmed{background:rgba(243,156,18,0.2);border:1px solid "
+      "#f39c12;color:#f39c12}"
+      ".alarm{background:rgba(231,76,60,0.3);border:1px solid "
+      "#e74c3c;color:#e74c3c;animation:pulse-pill 0.8s infinite}"
+      "@keyframes pulse-pill{0%,100%{opacity:1}50%{opacity:0.5}}"
+      "</style></head><body>");
+
+  // --- HTML Body ---
+  server.sendContent(
+      "<a href='/' id='back-btn'>← BACK</a>"
+      "<div id='status-pill' class='disarmed'>DISARMED</div>"
+      "<div id='hud'>"
+      "<div class='hud-card'>"
+      "<div class='hud-title'>Gait Disturbance</div>"
+      "<div class='hud-val' id='score-val'>0.000</div>"
+      "<div class='hud-sub'>Threshold: <span id='thresh-val'>0.85</span></div>"
+      "</div>"
+      "<div class='hud-card' id='ap-cards'></div>"
+      "</div>"
+      "<div id='legend'><div class='legend-card'>"
+      "<div class='legend-item'><div class='legend-dot' "
+      "style='background:#3498db'></div>AP Node (calm)</div>"
+      "<div class='legend-item'><div class='legend-dot' "
+      "style='background:#e74c3c'></div>AP Node (disturbed)</div>"
+      "<div class='legend-item'><div class='legend-dot' "
+      "style='background:#9b59b6'></div>Fresnel Zone</div>"
+      "<div class='legend-item'><div class='legend-dot' "
+      "style='background:rgba(231,76,60,0.5)'></div>Motion Cloud</div>"
+      "</div></div>");
+
+  // --- Three.js + OrbitControls from CDN ---
+  server.sendContent("<script "
+                     "src='https://cdnjs.cloudflare.com/ajax/libs/three.js/"
+                     "r128/three.min.js'></script>"
+                     "<script "
+                     "src='https://cdn.jsdelivr.net/npm/three@0.128.0/examples/"
+                     "js/controls/OrbitControls.min.js'></script>");
+
+  // --- Main JavaScript (chunked for ESP32 RAM) ---
+  // Part 1: Scene setup
+  server.sendContent(
+      "<script>"
+      "const scene=new THREE.Scene();"
+      "const camera=new "
+      "THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.1,100);"
+      "camera.position.set(5,4,5);"
+      "const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});"
+      "renderer.setSize(innerWidth,innerHeight);"
+      "renderer.setPixelRatio(Math.min(devicePixelRatio,2));"
+      "renderer.setClearColor(0x0a0a0f);"
+      "document.body.appendChild(renderer.domElement);"
+      "const controls=new THREE.OrbitControls(camera,renderer.domElement);"
+      "controls.enableDamping=true;controls.dampingFactor=0.08;"
+      "controls.minDistance=2;controls.maxDistance=20;"
+      "controls.target.set(0,1,0);"
+      "window.addEventListener('resize',()=>{camera.aspect=innerWidth/"
+      "innerHeight;"
+      "camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)"
+      "});");
+
+  // Part 2: Room + grid + lighting
+  server.sendContent(
+      "const roomW=6,roomD=5,roomH=3;"
+      "const roomGeo=new THREE.BoxGeometry(roomW,roomH,roomD);"
+      "const roomEdges=new THREE.EdgesGeometry(roomGeo);"
+      "const roomLine=new THREE.LineSegments(roomEdges,"
+      "new "
+      "THREE.LineBasicMaterial({color:0x333355,transparent:true,opacity:0.4}));"
+      "roomLine.position.y=roomH/2;scene.add(roomLine);"
+      "const gridHelper=new THREE.GridHelper(8,16,0x222244,0x161630);"
+      "scene.add(gridHelper);"
+      "scene.add(new THREE.AmbientLight(0x334466,0.5));"
+      "const pLight=new THREE.PointLight(0x9b59b6,1.5,15);"
+      "pLight.position.set(0,4,0);scene.add(pLight);");
+
+  // Part 3: ESP32 brain node at center
+  server.sendContent(
+      "const brainGeo=new THREE.OctahedronGeometry(0.15);"
+      "const brainMat=new "
+      "THREE.MeshPhongMaterial({color:0x2ecc71,emissive:0x2ecc71,"
+      "emissiveIntensity:0.8});"
+      "const brainNode=new THREE.Mesh(brainGeo,brainMat);"
+      "brainNode.position.set(0,1,0);scene.add(brainNode);"
+      // Brain glow ring
+      "const brainRingGeo=new THREE.RingGeometry(0.2,0.25,32);"
+      "const brainRingMat=new "
+      "THREE.MeshBasicMaterial({color:0x2ecc71,transparent:true,opacity:0.3,"
+      "side:THREE.DoubleSide});"
+      "const brainRing=new THREE.Mesh(brainRingGeo,brainRingMat);"
+      "brainRing.rotation.x=-Math.PI/"
+      "2;brainRing.position.set(0,0.02,0);scene.add(brainRing);");
+
+  // Part 4: AP node creation function + Fresnel zones
+  server.sendContent(
+      "const apNodes=[],apGlows=[],fresnelZones=[],apLabels=[];"
+      "const apPositions=["
+      "  new THREE.Vector3(2.5,1.5,2),"
+      "  new THREE.Vector3(-2.5,2,1),"
+      "  new THREE.Vector3(2,2.5,-2),"
+      "  new THREE.Vector3(-2,1,-2),"
+      "  new THREE.Vector3(0,2.8,0)"
+      "];"
+      "function createAPNode(idx){"
+      "  const g=new THREE.SphereGeometry(0.12,16,16);"
+      "  const m=new "
+      "THREE.MeshPhongMaterial({color:0x3498db,emissive:0x3498db,"
+      "emissiveIntensity:0.5});"
+      "  const mesh=new THREE.Mesh(g,m);"
+      "  mesh.position.copy(apPositions[idx%5]);"
+      "  scene.add(mesh);apNodes.push(mesh);"
+      // Glow halo
+      "  const hg=new THREE.SphereGeometry(0.3,16,16);"
+      "  const hm=new "
+      "THREE.MeshBasicMaterial({color:0x3498db,transparent:true,opacity:0.15});"
+      "  const halo=new THREE.Mesh(hg,hm);"
+      "  halo.position.copy(apPositions[idx%5]);"
+      "  scene.add(halo);apGlows.push(halo);"
+      // Fresnel zone line to brain
+      "  const pts=[apPositions[idx%5],new THREE.Vector3(0,1,0)];"
+      "  const lineGeo=new THREE.BufferGeometry().setFromPoints(pts);"
+      "  const lineMat=new "
+      "THREE.LineBasicMaterial({color:0x9b59b6,transparent:true,opacity:0.2});"
+      "  const line=new THREE.Line(lineGeo,lineMat);"
+      "  scene.add(line);fresnelZones.push(line);"
+      "}");
+
+  // Part 5: Motion particle cloud
+  server.sendContent(
+      "const particleCount=200;"
+      "const pGeo=new THREE.BufferGeometry();"
+      "const pPositions=new Float32Array(particleCount*3);"
+      "const pColors=new Float32Array(particleCount*3);"
+      "for(let i=0;i<particleCount;i++){"
+      "  pPositions[i*3]=(Math.random()-0.5)*2;"
+      "  pPositions[i*3+1]=0.5+Math.random()*2;"
+      "  pPositions[i*3+2]=(Math.random()-0.5)*2;"
+      "  pColors[i*3]=0.9;pColors[i*3+1]=0.3;pColors[i*3+2]=0.2;"
+      "}"
+      "pGeo.setAttribute('position',new THREE.BufferAttribute(pPositions,3));"
+      "pGeo.setAttribute('color',new THREE.BufferAttribute(pColors,3));"
+      "const pMat=new "
+      "THREE.PointsMaterial({size:0.06,transparent:true,opacity:0.0,"
+      "vertexColors:true,blending:THREE.AdditiveBlending,depthWrite:false});"
+      "const particles=new THREE.Points(pGeo,pMat);"
+      "scene.add(particles);");
+
+  // Part 6: Data fetching + update logic
+  server.sendContent("let lastData=null,apCount=0,initialized=false;"
+                     "async function fetchCSI(){"
+                     "  try{"
+                     "    const r=await fetch('/api/csi_data');"
+                     "    lastData=await r.json();"
+                     "    if(!initialized){initAPs(lastData);initialized=true;}"
+                     "    updateScene(lastData);"
+                     "  }catch(e){}"
+                     "}"
+                     "function initAPs(d){"
+                     "  apCount=d.aps.length;"
+                     "  for(let i=0;i<apCount;i++){createAPNode(i);}"
+                     "  updateAPCards(d);"
+                     "}"
+                     "function lerpColor(a,b,t){"
+                     "  const ar=(a>>16)&0xff,ag=(a>>8)&0xff,ab=a&0xff;"
+                     "  const br=(b>>16)&0xff,bg=(b>>8)&0xff,bb=b&0xff;"
+                     "  const rr=Math.round(ar+(br-ar)*t);"
+                     "  const rg=Math.round(ag+(bg-ag)*t);"
+                     "  const rb=Math.round(ab+(bb-ab)*t);"
+                     "  return(rr<<16)|(rg<<8)|rb;"
+                     "}");
+
+  // Part 7: Scene update function
+  server.sendContent(
+      "function updateScene(d){"
+      "  "
+      "document.getElementById('score-val').textContent=d.gaitScore.toFixed(3);"
+      "  "
+      "document.getElementById('thresh-val').textContent=d.threshold.toFixed(3)"
+      ";"
+      "  const sv=document.getElementById('score-val');"
+      "  const ratio=Math.min(d.gaitScore/d.threshold,1.5);"
+      "  if(ratio>1)sv.style.color='#e74c3c';"
+      "  else if(ratio>0.6)sv.style.color='#f39c12';"
+      "  else sv.style.color='#2ecc71';"
+      // Status pill
+      "  const pill=document.getElementById('status-pill');"
+      "  "
+      "if(d.gaitScore>d.threshold&&d.armed){pill.className='alarm';pill."
+      "textContent='ALARM';}"
+      "  else if(d.armed){pill.className='armed';pill.textContent='ARMED';}"
+      "  else{pill.className='disarmed';pill.textContent='DISARMED';}"
+      // Update AP nodes
+      "  let totalWeight=0;const center=new THREE.Vector3();"
+      "  for(let i=0;i<d.aps.length&&i<apNodes.length;i++){"
+      "    const s=d.aps[i].score;"
+      "    const t=Math.min(s*3,1);"
+      "    const col=lerpColor(0x3498db,0xe74c3c,t);"
+      "    apNodes[i].material.color.setHex(col);"
+      "    apNodes[i].material.emissive.setHex(col);"
+      "    apNodes[i].material.emissiveIntensity=0.4+s*0.8;"
+      "    const pulse=1+s*0.8;"
+      "    apGlows[i].scale.setScalar(pulse);"
+      "    apGlows[i].material.color.setHex(col);"
+      "    apGlows[i].material.opacity=0.1+s*0.25;"
+      "    fresnelZones[i].material.opacity=0.1+s*0.4;"
+      "    "
+      "fresnelZones[i].material.color.setHex(lerpColor(0x9b59b6,0xe74c3c,t));"
+      "    const w=s*s;"
+      "    center.add(apPositions[i%5].clone().multiplyScalar(w));"
+      "    totalWeight+=w;"
+      "  }"
+      "  if(totalWeight>0.001)center.divideScalar(totalWeight);"
+      "  else center.set(0,1,0);");
+
+  // Part 8: Particle cloud update + AP cards
+  server.sendContent(
+      "  const maxScore=Math.max(...d.aps.map(a=>a.score),0.001);"
+      "  particles.material.opacity=Math.min(maxScore*1.5,0.7);"
+      "  const pos=particles.geometry.attributes.position.array;"
+      "  const col=particles.geometry.attributes.color.array;"
+      "  for(let i=0;i<particleCount;i++){"
+      "    const ix=i*3;"
+      "    pos[ix]+=(center.x-pos[ix])*0.03+(Math.random()-0.5)*0.08;"
+      "    pos[ix+1]+=(center.y-pos[ix+1])*0.03+(Math.random()-0.5)*0.06;"
+      "    pos[ix+2]+=(center.z-pos[ix+2])*0.03+(Math.random()-0.5)*0.08;"
+      "    const intensity=maxScore;"
+      "    col[ix]=0.2+intensity*0.7;"
+      "    col[ix+1]=0.3*(1-intensity);"
+      "    col[ix+2]=0.2*(1-intensity);"
+      "  }"
+      "  particles.geometry.attributes.position.needsUpdate=true;"
+      "  particles.geometry.attributes.color.needsUpdate=true;"
+      "  updateAPCards(d);"
+      "}");
+
+  // Part 9: AP info cards HTML
+  server.sendContent(
+      "function updateAPCards(d){"
+      "  let h='<div class=\"hud-title\">AP Mesh ('+d.aps.length+')</div>';"
+      "  d.aps.forEach((ap,i)=>{"
+      "    const pct=Math.round(ap.score*100);"
+      "    const "
+      "barColor=ap.score>0.3?'#e74c3c':ap.score>0.1?'#f39c12':'#3498db';"
+      "    h+='<div style=\"margin:6px 0;padding:4px 0;border-bottom:1px solid "
+      "rgba(155,89,182,0.15)\">';"
+      "    h+='<div "
+      "style=\"display:flex;justify-content:space-between;font-size:11px\">';"
+      "    h+='<span style=\"color:#9b59b6\">AP'+ap.id+'</span>';"
+      "    h+='<span "
+      "style=\"color:'+barColor+';font-weight:700\">'+pct+'%</span></div>';"
+      "    if(ap.ch){"
+      "      h+='<div class=\"bar-row\">';"
+      "      const mx=Math.max(...ap.ch,0.1);"
+      "      ap.ch.forEach(v=>{"
+      "        const hPct=Math.round((v/mx)*100);"
+      "        h+='<div class=\"bar\" "
+      "style=\"height:'+hPct+'%;background:'+barColor+'\"></div>';"
+      "      });"
+      "      h+='</div>';"
+      "    }"
+      "    h+='</div>';"
+      "  });"
+      "  document.getElementById('ap-cards').innerHTML=h;"
+      "}");
+
+  // Part 10: Animation loop + start
+  server.sendContent(
+      "let t=0;"
+      "function animate(){"
+      "  requestAnimationFrame(animate);"
+      "  t+=0.02;"
+      "  brainNode.rotation.y=t;"
+      "  brainRing.scale.setScalar(1+Math.sin(t*2)*0.15);"
+      "  brainRing.material.opacity=0.2+Math.sin(t*3)*0.1;"
+      "  if(lastData&&lastData.gaitScore>0.01){"
+      "    pLight.intensity=1+lastData.gaitScore*2;"
+      "    "
+      "pLight.color.setHex(lerpColor(0x9b59b6,0xe74c3c,Math.min(lastData."
+      "gaitScore*2,1)));"
+      "  }"
+      "  for(let i=0;i<apGlows.length;i++){"
+      "    const s=apNodes[i]?1+Math.sin(t*3+i)*0.1:1;"
+      "    apGlows[i].scale.setScalar(apGlows[i].scale.x*0.95+s*0.05);"
+      "  }"
+      "  controls.update();"
+      "  renderer.render(scene,camera);"
+      "}"
+      "animate();"
+      "setInterval(fetchCSI,200);"
+      "fetchCSI();"
+      "</script></body></html>");
+
+  server.sendContent("");
+}
+
 inline void setupWebHandlers() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/status_data", HTTP_GET, handleStatusData);
@@ -1079,4 +1469,6 @@ inline void setupWebHandlers() {
   server.on("/api/ir", HTTP_GET, handleIRCommand);
   server.on("/api/learn", HTTP_GET, handleIRLearnCmd);
   server.on("/api/learn_status", HTTP_GET, handleIRLearnCheck);
+  server.on("/api/csi_data", HTTP_GET, handleCSIData);
+  server.on("/radar", HTTP_GET, handleRadar);
 }

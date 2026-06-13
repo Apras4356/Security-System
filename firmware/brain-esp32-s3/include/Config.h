@@ -22,6 +22,7 @@
 #define SOUND_LED_PIN 41
 #define CSI_DATA_LEN 128
 #define CSI_CHANNELS 64
+#define MQ2_PIN 10
 
 #define MAX_CARDS 50
 #define MAX_ZONES 10

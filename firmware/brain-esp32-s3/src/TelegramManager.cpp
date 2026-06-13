@@ -160,6 +160,21 @@ void telegramLoop(void * pvParameters) {
                         }
                         bot.sendMessage(id, cardMsg, "Markdown");
                     }
+                    else if (text == "/mesh") {
+                        String meshMsg = "📡 *Sensing Mesh Nodes:*\n";
+                        for (int i = 0; i < MAX_SENSING_APS; i++) {
+                            if (sensingTable[i].active) {
+                                char macStr[18];
+                                snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+                                         sensingTable[i].mac[0], sensingTable[i].mac[1],
+                                         sensingTable[i].mac[2], sensingTable[i].mac[3],
+                                         sensingTable[i].mac[4], sensingTable[i].mac[5]);
+                                String label = (i == 0) ? " (Router)" : "";
+                                meshMsg += "• AP" + String(i) + label + ": `" + String(macStr) + "`\n";
+                            }
+                        }
+                        bot.sendMessage(id, meshMsg, "Markdown");
+                    }
                     else if (text == "/zones") {
                         String zoneMsg = "🚪 *Access Zones:*\n";
                         bool hasZones = false;

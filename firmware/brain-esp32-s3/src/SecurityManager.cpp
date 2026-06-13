@@ -34,6 +34,7 @@ const float BASE_THRESHOLD = 0.85;
 const float MIN_THRESHOLD = 0.55;
 const float SENSITIVITY_BOOST = 0.08;
 SensingAP sensingTable[MAX_SENSING_APS];
+float csiChannelAmplitudes[MAX_SENSING_APS][CSI_CHANNELS];
 float alpha = 0.05;
 
 // --- Implementations ---
@@ -72,7 +73,7 @@ void triggerSeinagermos(String reason) {
 
 // --- CSI Math Functions ---
 // Pass the specific AP's background array as a pointer
-float calculateGaitScore(int8_t* raw_csi_data, int len, float* ap_background) {
+float calculateGaitScore(int8_t* raw_csi_data, int len, float* ap_background, int ap_index) {
     float current_variance = 0;
     int count = 0;
     
@@ -89,6 +90,11 @@ float calculateGaitScore(int8_t* raw_csi_data, int len, float* ap_background) {
         float dynamic_signal = fabs(amplitude - ap_background[channel_idx]);
         current_variance += dynamic_signal;
         count++;
+        
+        // Store per-channel amplitude for the radar visualization
+        if (ap_index >= 0 && ap_index < MAX_SENSING_APS) {
+            csiChannelAmplitudes[ap_index][channel_idx] = dynamic_signal;
+        }
     }
     
     float score = (count > 0) ? (current_variance / count) / 20.0 : 0; 
@@ -111,7 +117,7 @@ void csi_rx_callback(void *ctx, wifi_csi_info_t *data) {
         if (sensingTable[i].active && memcmp(data->mac, sensingTable[i].mac, 6) == 0) {
             
             // Pass the correct baseline array to the math function
-            float new_score = calculateGaitScore(data->buf, data->len, sensingTable[i].static_background);
+            float new_score = calculateGaitScore(data->buf, data->len, sensingTable[i].static_background, i);
             
             sensingTable[i].lastScore = new_score;
             float aggregate = 0;
@@ -171,6 +177,7 @@ void loadSensingAPs() {
 
 void setupSecurity() {
     loadSensingAPs();
+    pinMode(MQ2_PIN, INPUT);
     
     esp_err_t csi_err = esp_wifi_set_csi(true);
     
@@ -201,6 +208,12 @@ void securityLoop(void * pvParameters) {
     for(;;) {
         int sensorState = digitalRead(LASER_PIN);
         int buttonState = digitalRead(RESET_BUTTON);
+        
+        // --- GAS/SMOKE SENSOR ---
+        int gasValue = analogRead(MQ2_PIN);
+        if (gasValue > 2000) {
+            triggerSeinagermos("FIRE/SMOKE DETECTED! (MQ-2 Sensor)");
+        }
         
         // --- IMPROVED MICROPHONE SAMPLING ---
         // Sampling exactly once every 50ms misses 95% of the audio wave.

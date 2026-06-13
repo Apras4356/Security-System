@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <esp_wifi.h>
 #include <esp_wifi_types.h>
+#include "Config.h"
 
 // --- Expose these states to WebPages.h and Telegram ---
 extern volatile bool systemArmed;
@@ -10,6 +11,7 @@ extern bool isSirenDetected;
 extern int webSoundSensitivity;
 extern int activeAPCount;
 extern volatile float gaitDisturbanceScore;
+extern float csiChannelAmplitudes[MAX_SENSING_APS][CSI_CHANNELS];
 
 // --- Core Security Functions ---
 void setupSecurity();
