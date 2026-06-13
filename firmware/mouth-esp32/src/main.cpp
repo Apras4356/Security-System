@@ -5,6 +5,7 @@
 
 #define RX2_PIN 16
 #define TX2_PIN 17
+#define BUTTON_PIN 0
 
 volatile bool isAlarmTriggered = false;
 uint32_t current_pcm_index = 0;
@@ -14,6 +15,9 @@ String targetSpeaker = "";
 volatile bool newlyConnected = false;
 unsigned long ledTurnOffTime = 0;
 bool isLedGreen = false;
+
+// Button debounce tracking
+unsigned long lastButtonPress = 0;
 
 Adafruit_NeoPixel LED_RGB(1, 22, NEO_GRBW + NEO_KHZ800);
 BluetoothA2DPSource a2dp_source;
@@ -54,6 +58,7 @@ void connection_state_changed(esp_a2d_connection_state_t state, void *ptr) {
 void setup() {
   Serial.begin(115200);
   Serial2.begin(9600, SERIAL_8N1, RX2_PIN, TX2_PIN);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
   
   preferences.begin("audio_prefs", false);
   targetSpeaker = preferences.getString("speaker", "");
@@ -67,6 +72,7 @@ void setup() {
   Serial.println("Saved Speaker Name: [" + targetSpeaker + "]");
 
   a2dp_source.set_on_connection_state_changed(connection_state_changed);
+  a2dp_source.set_volume(100);
 
   if (targetSpeaker != "") {
     Serial.println("Starting Bluetooth stack...");
@@ -95,6 +101,15 @@ void loop() {
     if (!isAlarmTriggered) { 
       LED_RGB.clear(); 
       LED_RGB.show();
+    }
+  }
+
+  // Check BOOT button to trigger alarm manually
+  if (digitalRead(BUTTON_PIN) == LOW) {
+    if (millis() - lastButtonPress > 500) { // 500ms debounce
+      lastButtonPress = millis();
+      Serial.println("BOOT Button Pressed! Sending Trigger to Brain...");
+      Serial2.println("T"); 
     }
   }
 
