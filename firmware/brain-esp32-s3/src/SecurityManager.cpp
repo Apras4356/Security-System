@@ -38,7 +38,7 @@ const float MIN_THRESHOLD = 0.55;
 const float SENSITIVITY_BOOST = 0.08;
 SensingAP sensingTable[MAX_SENSING_APS];
 float csiChannelAmplitudes[MAX_SENSING_APS][CSI_CHANNELS];
-float alpha = 0.05;
+float alpha = 0.005; // Reduced from 0.05 so it doesn't adapt to walking too fast!
 
 // --- Implementations ---
 
@@ -121,28 +121,33 @@ float calculateGaitScore(int8_t *raw_csi_data, int len, float *ap_background,
     }
   }
 
-  float score = (count > 0) ? (current_variance / count) / 20.0 : 0;
+  // Changed divisor from 20.0 to 10.0 to make it twice as sensitive
+  float score = (count > 0) ? (current_variance / count) / 10.0 : 0;
   if (score > 1.0)
     score = 1.0;
   return score;
 }
 
 void csi_rx_callback(void *ctx, wifi_csi_info_t *data) {
-  if (!systemArmed)
+  if (!systemArmed) {
+    gaitDisturbanceScore = 0;
+    for (int i = 0; i < MAX_SENSING_APS; i++) {
+      sensingTable[i].lastScore = 0;
+      for (int c = 0; c < CSI_CHANNELS; c++) {
+        csiChannelAmplitudes[i][c] = 0;
+      }
+    }
     return;
-
-  // --- THE FIX: THROTTLE THE CALLBACK ---
-  // Only process 1 packet every 50 milliseconds (20 Hz max).
-  // This allows the Wi-Fi driver to handle Telegram/ESP-NOW traffic safely!
-  static unsigned long last_csi_time = 0;
-  if (millis() - last_csi_time < 50)
-    return;
-  last_csi_time = millis();
-  // --------------------------------------
+  }
 
   for (int i = 0; i < MAX_SENSING_APS; i++) {
     if (sensingTable[i].active &&
         memcmp(data->mac, sensingTable[i].mac, 6) == 0) {
+
+      // Throttling PER AP, not globally!
+      static unsigned long last_csi_times[MAX_SENSING_APS] = {0};
+      if (millis() - last_csi_times[i] < 50) return;
+      last_csi_times[i] = millis();
 
       // Pass the correct baseline array to the math function
       float new_score = calculateGaitScore(
