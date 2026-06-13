@@ -276,7 +276,7 @@ void securityLoop(void * pvParameters) {
         }
 
         if ((buttonState == LOW || pendingArmTimer > 0) && !systemArmed && !isAlarmActive) {
-            int countdown = (pendingArmTimer > 0) ? pendingArmTimer : 10;
+            int countdown = (pendingArmTimer > 0) ? pendingArmTimer : armingDelaySeconds;
             pendingArmTimer = -1; // Reset it immediately
             
             lcd.clear(); lcd.setCursor(0, 0); lcd.print("Arming Mesh...");

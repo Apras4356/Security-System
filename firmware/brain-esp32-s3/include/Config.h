@@ -29,7 +29,7 @@
 #define MAX_LOGS 20
 #define MAX_SENSING_APS 5
 
-const int armingDelaySeconds = 10;
+
 extern int silenceOffset;
 extern int currentSensitivity;
 extern bool isSirenDetected;

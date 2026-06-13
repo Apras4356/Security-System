@@ -13,6 +13,7 @@ extern volatile bool isEnrollMode;
 extern volatile int pendingArmTimer;
 extern String pendingUID;
 extern bool isGreek;
+extern int armingDelaySeconds;
 
 extern volatile bool pendingAlarmNotification;
 extern char alarmReason[128];

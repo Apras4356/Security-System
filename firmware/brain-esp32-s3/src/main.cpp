@@ -54,6 +54,7 @@ struct_message incomingRead;
 volatile bool newRfidAvailable = false;
 char espNowUID[30] = "";
 volatile int pendingArmTimer = -1;
+int armingDelaySeconds = 10;
 uint8_t lastRemoteMac[6];
 bool isGreek = false;
 
@@ -156,6 +157,7 @@ void setup() {
   telegramChatID = preferences.getString("chat_id", CHAT_ID);
   callMeBotUser = preferences.getString("cmb_user", "");
   targetSpeaker = preferences.getString("bt_speaker", "");
+  armingDelaySeconds = preferences.getInt("arm_delay", 10);
   preferences.end();
 
   delay(1000);

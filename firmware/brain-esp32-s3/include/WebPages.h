@@ -376,6 +376,9 @@ inline void handleSettings() {
           "</strong><br>";
   html += "<input type='text' name='cmb_user' value='" + callMeBotUser +
           "' placeholder='@YourUsername' required><br><br>";
+  html += "<strong>" + T("Arming Delay (seconds)", "Χρόνος Οπλισης (δευτ.)") + "</strong><br>";
+  html += "<input type='number' name='arm_delay' value='" + String(armingDelaySeconds) +
+          "' min='1' max='120' required><br><br>";
   html += "<hr style='border-color:#555; margin: 20px 0;'>";
   html += "<h3 style='color:#f1c40f;'>" +
           T("Hardware Toggles", "Διακόπτες Υλικού") + "</h3>";
@@ -422,6 +425,7 @@ inline void handleSaveSettings() {
   String newCMBUser = server.arg("cmb_user");
   String newSpeaker = server.arg("bt_speaker");
   bool newLaserEnabled = server.hasArg("laser_en");
+  int newArmDelay = server.hasArg("arm_delay") ? server.arg("arm_delay").toInt() : 10;
 
   newToken.trim();
   newChatID.trim();
@@ -434,6 +438,7 @@ inline void handleSaveSettings() {
   preferences.putString("cmb_user", newCMBUser);
   preferences.putString("bt_speaker", newSpeaker);
   preferences.putBool("laser_en", newLaserEnabled);
+  preferences.putInt("arm_delay", newArmDelay);
   preferences.end();
 
   // Update live state
@@ -442,6 +447,7 @@ inline void handleSaveSettings() {
   callMeBotUser = newCMBUser;
   targetSpeaker = newSpeaker;
   laserEnabled = newLaserEnabled;
+  armingDelaySeconds = newArmDelay;
 
   // Tell the Mouth about the new speaker
   if (newSpeaker != "") {
