@@ -3,7 +3,6 @@
 #include <Preferences.h>
 #include <WebServer.h>
 
-
 #include "Config.h"
 
 extern bool devModeActive;
@@ -14,6 +13,9 @@ extern volatile int pendingArmTimer;
 extern String pendingUID;
 extern bool isGreek;
 extern int armingDelaySeconds;
+extern String sinricAppKey;
+extern String sinricAppSecret;
+extern String sinricDeviceId;
 
 extern volatile bool pendingAlarmNotification;
 extern char alarmReason[128];

@@ -17,7 +17,7 @@
 #define SPI_MOSI 11
 #define WIFI_LED 42
 #define RESET_BUTTON 47
-#define SOUND_PIN 4 
+#define SOUND_PIN 4
 #define POT_PIN 1
 #define SOUND_LED_PIN 41
 #define CSI_DATA_LEN 128
@@ -28,7 +28,6 @@
 #define MAX_ZONES 10
 #define MAX_LOGS 20
 #define MAX_SENSING_APS 5
-
 
 extern int silenceOffset;
 extern int currentSensitivity;

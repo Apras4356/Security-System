@@ -134,7 +134,14 @@ void telegramLoop(void * pvParameters) {
                             bot.sendMessage(id, "ℹ️ System is already disarmed.", "");
                         }
                     } 
-                    // ... [Keep your other commands (/logs, /cards, /zones) exactly as they were] ...
+                    else if (text == "/trigger") {
+                        if (!isAlarmActive) {
+                            triggerSeinagermos("Telegram Bot Trigger");
+                            bot.sendMessage(id, "🚨 *ALARM TRIGGERED MANUALLY!*", "Markdown");
+                        } else {
+                            bot.sendMessage(id, "ℹ️ Alarm is already blasting.", "");
+                        }
+                    }
                     else if (text == "/logs") {
                         String logMsg = "📋 *Recent Events:*\n";
                         bool hasLogs = false;
@@ -192,11 +199,12 @@ void telegramLoop(void * pvParameters) {
                         helpMsg += "• /status - Check system & battery\n";
                         helpMsg += "• /arm - Arm the system\n";
                         helpMsg += "• /disarm - Disarm the system\n";
+                        helpMsg += "• /trigger - Manually trigger alarm\n";
                         helpMsg += "• /logs - View recent events\n";
                         helpMsg += "• /cards - List authorized users\n";
                         helpMsg += "• /zones - List hardware zones";
                         
-                        String keyboardJson = "[[\"/status\", \"/logs\"], [\"/arm\", \"/disarm\"], [\"/cards\", \"/zones\"]]";
+                        String keyboardJson = "[[\"/status\", \"/trigger\"], [\"/arm\", \"/disarm\"], [\"/logs\", \"/cards\"], [\"/zones\"]]";
                         bot.sendMessageWithReplyKeyboard(id, helpMsg, "Markdown", keyboardJson, true);
                     }
                     else {

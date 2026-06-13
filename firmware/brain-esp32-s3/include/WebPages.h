@@ -244,7 +244,7 @@ inline void handleRoot() {
   html += "    }";
 
   // Update the siren text
-  html += "    sirenSpan.innerHTML = (data.siren || data.alarmActive) ? (isGr "
+  html += "    sirenSpan.innerHTML = (data.siren) ? (isGr "
           "? '<span style=\"color:red;\">ΝΑΙ</span>' : '<span "
           "style=\"color:red;\">YES</span>') : (isGr ? '<span "
           "style=\"color:green;\">ΟΧΙ</span>' : '<span "
@@ -376,9 +376,10 @@ inline void handleSettings() {
           "</strong><br>";
   html += "<input type='text' name='cmb_user' value='" + callMeBotUser +
           "' placeholder='@YourUsername' required><br><br>";
-  html += "<strong>" + T("Arming Delay (seconds)", "Χρόνος Οπλισης (δευτ.)") + "</strong><br>";
-  html += "<input type='number' name='arm_delay' value='" + String(armingDelaySeconds) +
-          "' min='1' max='120' required><br><br>";
+  html += "<strong>" + T("Arming Delay (seconds)", "Χρόνος Οπλισης (δευτ.)") +
+          "</strong><br>";
+  html += "<input type='number' name='arm_delay' value='" +
+          String(armingDelaySeconds) + "' min='1' max='120' required><br><br>";
   html += "<hr style='border-color:#555; margin: 20px 0;'>";
   html += "<h3 style='color:#f1c40f;'>" +
           T("Hardware Toggles", "Διακόπτες Υλικού") + "</h3>";
@@ -392,6 +393,18 @@ inline void handleSettings() {
           T("Enable Laser Tripwire", "Ενεργοποίηση Laser Ασφαλείας") +
           "</strong>";
   html += "</label><br><br>";
+  html += "<hr style='border-color:#555; margin: 20px 0;'>";
+  html += "<h3 style='color:#9b59b6;'>" +
+          T("Google Home / Sinric Pro", "Google Home / Sinric Pro") + "</h3>";
+  html += "<strong>" + T("App Key", "App Key") + "</strong><br>";
+  html += "<input type='text' name='sinric_key' value='" + sinricAppKey +
+          "' placeholder='Sinric App Key'><br><br>";
+  html += "<strong>" + T("App Secret", "App Secret") + "</strong><br>";
+  html += "<input type='password' name='sinric_sec' value='" + sinricAppSecret +
+          "' placeholder='Sinric App Secret'><br><br>";
+  html += "<strong>" + T("Device ID (Switch)", "Device ID (Διακόπτης)") + "</strong><br>";
+  html += "<input type='text' name='sinric_dev' value='" + sinricDeviceId +
+          "' placeholder='Sinric Device ID'><br><br>";
   html += "<hr style='border-color:#555; margin: 20px 0;'>";
   html += "<h3 style='color:#9b59b6;'>" +
           T("Bluetooth Speaker", "Ηχείο Bluetooth") + "</h3>";
@@ -424,19 +437,29 @@ inline void handleSaveSettings() {
   String newChatID = server.arg("chat_id");
   String newCMBUser = server.arg("cmb_user");
   String newSpeaker = server.arg("bt_speaker");
+  String newSinricKey = server.arg("sinric_key");
+  String newSinricSec = server.arg("sinric_sec");
+  String newSinricDev = server.arg("sinric_dev");
   bool newLaserEnabled = server.hasArg("laser_en");
-  int newArmDelay = server.hasArg("arm_delay") ? server.arg("arm_delay").toInt() : 10;
+  int newArmDelay =
+      server.hasArg("arm_delay") ? server.arg("arm_delay").toInt() : 10;
 
   newToken.trim();
   newChatID.trim();
   newCMBUser.trim();
   newSpeaker.trim();
+  newSinricKey.trim();
+  newSinricSec.trim();
+  newSinricDev.trim();
 
   preferences.begin("sys_prefs", false);
   preferences.putString("bot_token", newToken);
   preferences.putString("chat_id", newChatID);
   preferences.putString("cmb_user", newCMBUser);
   preferences.putString("bt_speaker", newSpeaker);
+  preferences.putString("sinric_key", newSinricKey);
+  preferences.putString("sinric_sec", newSinricSec);
+  preferences.putString("sinric_dev", newSinricDev);
   preferences.putBool("laser_en", newLaserEnabled);
   preferences.putInt("arm_delay", newArmDelay);
   preferences.end();
@@ -446,6 +469,9 @@ inline void handleSaveSettings() {
   telegramChatID = newChatID;
   callMeBotUser = newCMBUser;
   targetSpeaker = newSpeaker;
+  sinricAppKey = newSinricKey;
+  sinricAppSecret = newSinricSec;
+  sinricDeviceId = newSinricDev;
   laserEnabled = newLaserEnabled;
   armingDelaySeconds = newArmDelay;
 

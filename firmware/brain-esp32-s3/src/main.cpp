@@ -16,7 +16,6 @@
 #include <nvs_flash.h>
 #include <time.h>
 
-
 #include "Config.h"
 #include "Globals.h"
 #include "IRManager.h"
@@ -25,7 +24,7 @@
 #include "SecurityManager.h"
 #include "TelegramManager.h"
 #include "WebPages.h"
-
+#include "GoogleHomeManager.h"
 
 bool devModeActive = false;
 WebServer server(80);
@@ -55,6 +54,9 @@ volatile bool newRfidAvailable = false;
 char espNowUID[30] = "";
 volatile int pendingArmTimer = -1;
 int armingDelaySeconds = 10;
+String sinricAppKey = "";
+String sinricAppSecret = "";
+String sinricDeviceId = "";
 uint8_t lastRemoteMac[6];
 bool isGreek = false;
 
@@ -104,7 +106,14 @@ void pollSmartBulb() {
     String command = Serial.readStringUntil('\n');
     command.trim();
     if (command == "T" || command == "t") {
-      triggerSeinagermos("MANUAL TEST: Virtual Bulb Trip");
+      triggerSeinagermos("MANUAL TEST: PC Serial Trip");
+    }
+  }
+  if (Serial2.available() > 0) {
+    String command = Serial2.readStringUntil('\n');
+    command.trim();
+    if (command == "T" || command == "t") {
+      triggerSeinagermos("MANUAL TEST: Mouth ESP32 Button");
     }
   }
 }
@@ -158,6 +167,9 @@ void setup() {
   callMeBotUser = preferences.getString("cmb_user", "");
   targetSpeaker = preferences.getString("bt_speaker", "");
   armingDelaySeconds = preferences.getInt("arm_delay", 10);
+  sinricAppKey = preferences.getString("sinric_key", "");
+  sinricAppSecret = preferences.getString("sinric_sec", "");
+  sinricDeviceId = preferences.getString("sinric_dev", "");
   preferences.end();
 
   delay(1000);
@@ -185,6 +197,8 @@ void setup() {
   Serial.println("\nWiFi Connected!");
   Serial.print("IP Address: ");
   Serial.println(WiFi.localIP());
+
+  setupGoogleHome();
 
   // --- REVERTED BACK TO HTTP ---
   lcd.clear();
@@ -247,6 +261,7 @@ void loop() {
 
   handleRFID();
   handleIRLearning();
+  loopGoogleHome();
 
   vTaskDelay(50 / portTICK_PERIOD_MS);
 }
