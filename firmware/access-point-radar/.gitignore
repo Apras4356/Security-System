@@ -1,0 +1,14 @@
+# Build and IDE Directories
+.pio/
+.vscode/
+build/
+
+# Compiled output
+*.bin
+*.elf
+*.map
+*.hex
+
+# OS generated files
+.DS_Store
+Thumbs.db
