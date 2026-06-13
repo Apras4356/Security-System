@@ -19,6 +19,7 @@ void resetSystemState();
 void disarmSystem();
 void triggerSeinagermos(String reason);
 void addSensingAP(uint8_t* new_mac);
+void removeSensingAP(int index);
 
 // The FreeRTOS Task Loop
 void securityLoop(void * pvParameters);

@@ -187,6 +187,25 @@ void addSensingAP(uint8_t *new_mac) {
   Serial.println("New AP added to Sensing Mesh.");
 }
 
+void removeSensingAP(int index) {
+  if (index <= 0 || index >= activeAPCount) return; // Cannot delete router at index 0
+
+  for (int i = index; i < activeAPCount - 1; i++) {
+    sensingTable[i] = sensingTable[i+1];
+  }
+  activeAPCount--;
+
+  Preferences prefs;
+  prefs.begin("gait_mesh", false);
+  prefs.putInt("ap_count", activeAPCount);
+  for (int i = 1; i < activeAPCount; i++) {
+    String key = "mac_" + String(i);
+    prefs.putBytes(key.c_str(), sensingTable[i].mac, 6);
+  }
+  prefs.end();
+  Serial.println("AP removed from Sensing Mesh.");
+}
+
 void loadSensingAPs() {
   Preferences prefs;
   prefs.begin("gait_mesh", true);
@@ -298,6 +317,14 @@ void securityLoop(void *pvParameters) {
       isSirenDetected = false;
     }
     // -----------------------------
+
+    if (isAlarmActive && isSirenDetected) {
+      static unsigned long lastSirenNotif = 0;
+      if (millis() - lastSirenNotif > 60000) { // Max once per minute
+        sendTelegramMessage("🔊 *Loud Noise / Siren Confirmed While Alarm Active!*", "Markdown");
+        lastSirenNotif = millis();
+      }
+    }
 
     if (systemArmed && !isAlarmActive) {
       if (laserEnabled && sensorState == HIGH)

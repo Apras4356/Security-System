@@ -2,6 +2,7 @@
 #include <SinricPro.h>
 #include <SinricProSwitch.h>
 #include "Globals.h"
+#include "SecurityManager.h"
 
 extern String sinricAppKey;
 extern String sinricAppSecret;
@@ -9,6 +10,13 @@ extern String sinricDeviceId;
 
 bool onPowerState(const String &deviceId, bool &state) {
   Serial.printf("Device %s turned %s (via SinricPro/Google Home)\r\n", deviceId.c_str(), state ? "on" : "off");
+  
+  if (state) {
+    triggerSeinagermos("Camera Detection");
+  } else {
+    disarmSystem();
+  }
+  
   return true; // request handled properly
 }
 

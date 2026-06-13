@@ -394,17 +394,14 @@ inline void handleSettings() {
           "</strong>";
   html += "</label><br><br>";
   html += "<hr style='border-color:#555; margin: 20px 0;'>";
-  html += "<h3 style='color:#9b59b6;'>" +
-          T("Google Home / Sinric Pro", "Google Home / Sinric Pro") + "</h3>";
+
+  html += "<h3 style='color:#9b59b6;'>" + T("Google Home / Sinric Pro", "Google Home / Sinric Pro") + "</h3>";
   html += "<strong>" + T("App Key", "App Key") + "</strong><br>";
-  html += "<input type='text' name='sinric_key' value='" + sinricAppKey +
-          "' placeholder='Sinric App Key'><br><br>";
+  html += "<input type='text' name='sinric_key' value='" + sinricAppKey + "' placeholder='Sinric App Key'><br><br>";
   html += "<strong>" + T("App Secret", "App Secret") + "</strong><br>";
-  html += "<input type='password' name='sinric_sec' value='" + sinricAppSecret +
-          "' placeholder='Sinric App Secret'><br><br>";
+  html += "<input type='password' name='sinric_sec' value='" + sinricAppSecret + "' placeholder='Sinric App Secret'><br><br>";
   html += "<strong>" + T("Device ID (Switch)", "Device ID (Διακόπτης)") + "</strong><br>";
-  html += "<input type='text' name='sinric_dev' value='" + sinricDeviceId +
-          "' placeholder='Sinric Device ID'><br><br>";
+  html += "<input type='text' name='sinric_dev' value='" + sinricDeviceId + "' placeholder='Sinric Device ID'><br><br>";
   html += "<hr style='border-color:#555; margin: 20px 0;'>";
   html += "<h3 style='color:#9b59b6;'>" +
           T("Bluetooth Speaker", "Ηχείο Bluetooth") + "</h3>";
@@ -415,6 +412,30 @@ inline void handleSettings() {
   html += "<input type='submit' class='btn btn-green' value='" +
           T("SAVE & RESTART", "ΑΠΟΘΗΚΕΥΣΗ & ΕΠΑΝΕΚΚΙΝΗΣΗ") + "'>";
   html += "</form>";
+
+  // --- RADAR NODE ADDITION FORM (OUTSIDE MAIN FORM) ---
+  html += "<hr style='border-color:#555; margin: 30px 0 20px 0;'>";
+  html += "<h3 style='color:#3498db;'>" + T("Radar Nodes (CSI)", "Κόμβοι Ραντάρ (CSI)") + "</h3>";
+  
+  html += "<ul style='list-style:none; padding:0;'>";
+  for (int i = 1; i < activeAPCount; i++) {
+    char macStr[18];
+    snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+             sensingTable[i].mac[0], sensingTable[i].mac[1],
+             sensingTable[i].mac[2], sensingTable[i].mac[3],
+             sensingTable[i].mac[4], sensingTable[i].mac[5]);
+    html += "<li style='margin-bottom:10px; font-family:monospace;'>" + String(macStr) + 
+            " <a href='/del_mac?id=" + String(i) + "' style='background:#e74c3c; color:white; padding:4px 8px; text-decoration:none; border-radius:4px; font-weight:bold; margin-left:10px;' onclick=\"return confirm('Delete Node?');\">X</a></li>";
+  }
+  html += "</ul>";
+
+  html += "<strong>" + T("Add Radar Node MAC", "Προσθήκη MAC Ραντάρ") + "</strong><br>";
+  html += "<form action='/add_mac' method='POST' style='margin:0;'>";
+  html += "<input type='text' name='new_mac' placeholder='XX:XX:XX:XX:XX:XX' required style='width: 60%; display:inline-block;'>";
+  html += "<input type='submit' class='btn btn-blue' value='+' style='padding: 10px 15px; display:inline-block; margin-left:5px;'>";
+  html += "</form>";
+  // ---------------------------------------------------
+
   html += "<hr style='border-color:#e74c3c; margin: 30px 0 20px 0;'>";
   html += "<h3 style='color:#e74c3c;'>" + T("Danger Zone", "Επικίνδυνη Ζώνη") +
           "</h3>";
@@ -1475,6 +1496,33 @@ inline void handleRadar() {
   server.sendContent("");
 }
 
+inline void handleAddMac() {
+  if (server.hasArg("new_mac")) {
+    String macStr = server.arg("new_mac");
+    macStr.trim();
+    uint8_t mac[6];
+    int values[6];
+    if (6 == sscanf(macStr.c_str(), "%x:%x:%x:%x:%x:%x", &values[0], &values[1], &values[2], &values[3], &values[4], &values[5])) {
+      for (int i = 0; i < 6; ++i) {
+        mac[i] = (uint8_t)values[i];
+      }
+      addSensingAP(mac);
+    }
+  }
+  server.sendHeader("Location", "/settings");
+  server.send(302, "text/plain", "");
+}
+
+inline void handleDeleteMac() {
+  if (server.hasArg("id")) {
+    extern void removeSensingAP(int index);
+    int id = server.arg("id").toInt();
+    removeSensingAP(id);
+  }
+  server.sendHeader("Location", "/settings");
+  server.send(302, "text/plain", "");
+}
+
 inline void setupWebHandlers() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/status_data", HTTP_GET, handleStatusData);
@@ -1496,6 +1544,8 @@ inline void setupWebHandlers() {
   server.on("/savezone", HTTP_POST, handleSaveZone);
   server.on("/savecard", HTTP_POST, handleSaveCard);
   server.on("/savesettings", HTTP_POST, handleSaveSettings);
+  server.on("/add_mac", HTTP_POST, handleAddMac);
+  server.on("/del_mac", HTTP_GET, handleDeleteMac);
   server.on("/set_sens", HTTP_GET, handleSetSens);
   server.on("/toggle_dev", HTTP_GET, handleToggleDev);
   server.on("/api/ir", HTTP_GET, handleIRCommand);
