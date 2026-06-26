@@ -12,6 +12,7 @@
 #include <Wire.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
+#include <WiFiUdp.h>
 #include <esp_wifi_types.h>
 #include <nvs_flash.h>
 #include <time.h>
@@ -29,10 +30,12 @@
 bool devModeActive = false;
 WebServer server(80);
 uint8_t router_mac[6];
+WiFiUDP stateUdp;
 
 extern void saveCards();
 extern void loadCards();
 bool laserEnabled = true;
+bool smokeEnabled = true;
 
 Preferences preferences;
 
@@ -119,10 +122,23 @@ void pollSmartBulb() {
 }
 
 void communicationLoop(void *pvParameters) {
+  unsigned long lastStateBroadcast = 0;
   for (;;) {
     pollSmartBulb();
     digitalWrite(WIFI_LED, WiFi.status() == WL_CONNECTED);
     server.handleClient();
+
+    if (millis() - lastStateBroadcast > 1000) {
+      stateUdp.beginPacket("255.255.255.255", 8889);
+      if (systemArmed) {
+        stateUdp.print("STATE:ARMED");
+      } else {
+        stateUdp.print("STATE:DISARMED");
+      }
+      stateUdp.endPacket();
+      lastStateBroadcast = millis();
+    }
+
     vTaskDelay(10 / portTICK_PERIOD_MS);
   }
 }
@@ -162,6 +178,7 @@ void setup() {
   preferences.begin("sys_prefs", true);
   webSoundSensitivity = preferences.getInt("mic_sens", 50);
   laserEnabled = preferences.getBool("laser_en", true);
+  smokeEnabled = preferences.getBool("smoke_en", true);
   telegramToken = preferences.getString("bot_token", BOT_TOKEN);
   telegramChatID = preferences.getString("chat_id", CHAT_ID);
   callMeBotUser = preferences.getString("cmb_user", "");

@@ -257,15 +257,28 @@ void setupSecurity() {
 // --- The RTOS Task ---
 void securityLoop(void *pvParameters) {
   extern bool devModeActive; // Pull this from main for now
+  unsigned long lastSerialHeartbeat = 0;
 
   for (;;) {
     int sensorState = digitalRead(LASER_PIN);
     int buttonState = digitalRead(RESET_BUTTON);
 
+    // Send heartbeat to Mouth ESP32 every 2 seconds
+    if (millis() - lastSerialHeartbeat > 2000) {
+      if (systemArmed) {
+        Serial2.println("H:ARMED");
+      } else {
+        Serial2.println("H:DISARMED");
+      }
+      lastSerialHeartbeat = millis();
+    }
+
     // --- GAS/SMOKE SENSOR ---
-    int gasValue = analogRead(MQ2_PIN);
-    if (gasValue > 2000) {
-      triggerSeinagermos("FIRE/SMOKE DETECTED! (MQ-2 Sensor)");
+    if (smokeEnabled) {
+      int gasValue = analogRead(MQ2_PIN);
+      if (gasValue > 2000) {
+        triggerSeinagermos("FIRE/SMOKE DETECTED! (MQ-2 Sensor)");
+      }
     }
 
     // --- IMPROVED MICROPHONE SAMPLING ---

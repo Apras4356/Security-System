@@ -20,6 +20,7 @@ extern String sinricDeviceId;
 extern volatile bool pendingAlarmNotification;
 extern char alarmReason[128];
 extern bool laserEnabled;
+extern bool smokeEnabled;
 
 extern WebServer server;
 extern Preferences preferences;

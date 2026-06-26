@@ -393,6 +393,17 @@ inline void handleSettings() {
           T("Enable Laser Tripwire", "Ενεργοποίηση Laser Ασφαλείας") +
           "</strong>";
   html += "</label><br><br>";
+
+  String smokeChecked = smokeEnabled ? "checked" : "";
+  html +=
+      "<label style='display: flex; align-items: center; cursor: pointer;'>";
+  html += "<input type='checkbox' name='smoke_en' value='1' style='width: "
+          "25px; height: 25px; margin-right: 15px;' " +
+          smokeChecked + ">";
+  html += "<strong>" +
+          T("Enable Smoke Detector", "Ενεργοποίηση Ανιχνευτή Καπνού") +
+          "</strong>";
+  html += "</label><br><br>";
   html += "<hr style='border-color:#555; margin: 20px 0;'>";
 
   html += "<h3 style='color:#9b59b6;'>" + T("Google Home / Sinric Pro", "Google Home / Sinric Pro") + "</h3>";
@@ -462,6 +473,7 @@ inline void handleSaveSettings() {
   String newSinricSec = server.arg("sinric_sec");
   String newSinricDev = server.arg("sinric_dev");
   bool newLaserEnabled = server.hasArg("laser_en");
+  bool newSmokeEnabled = server.hasArg("smoke_en");
   int newArmDelay =
       server.hasArg("arm_delay") ? server.arg("arm_delay").toInt() : 10;
 
@@ -482,6 +494,7 @@ inline void handleSaveSettings() {
   preferences.putString("sinric_sec", newSinricSec);
   preferences.putString("sinric_dev", newSinricDev);
   preferences.putBool("laser_en", newLaserEnabled);
+  preferences.putBool("smoke_en", newSmokeEnabled);
   preferences.putInt("arm_delay", newArmDelay);
   preferences.end();
 
@@ -494,6 +507,7 @@ inline void handleSaveSettings() {
   sinricAppSecret = newSinricSec;
   sinricDeviceId = newSinricDev;
   laserEnabled = newLaserEnabled;
+  smokeEnabled = newSmokeEnabled;
   armingDelaySeconds = newArmDelay;
 
   // Tell the Mouth about the new speaker
@@ -502,7 +516,8 @@ inline void handleSaveSettings() {
   }
 
   String html = "<html><head><meta charset='UTF-8'><meta name='viewport' "
-                "content='width=device-width, initial-scale=1'>" +
+                "content='width=device-width, initial-scale=1'>"
+                "<meta http-equiv='refresh' content='8;url=/' />" +
                 getStyles() + "</head><body>";
   html += "<h1 style='color:#2ecc71;'>" +
           T("Settings Saved!", "Ρυθμίσεις Αποθηκεύτηκαν!") + "</h1>";
