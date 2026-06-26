@@ -21,6 +21,7 @@ extern volatile bool pendingAlarmNotification;
 extern char alarmReason[128];
 extern bool laserEnabled;
 extern bool smokeEnabled;
+extern bool wifiDetectionEnabled;
 
 extern WebServer server;
 extern Preferences preferences;

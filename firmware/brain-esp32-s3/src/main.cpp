@@ -36,6 +36,7 @@ extern void saveCards();
 extern void loadCards();
 bool laserEnabled = true;
 bool smokeEnabled = true;
+bool wifiDetectionEnabled = true;
 
 Preferences preferences;
 
@@ -179,6 +180,7 @@ void setup() {
   webSoundSensitivity = preferences.getInt("mic_sens", 50);
   laserEnabled = preferences.getBool("laser_en", true);
   smokeEnabled = preferences.getBool("smoke_en", true);
+  wifiDetectionEnabled = preferences.getBool("wifi_det", true);
   telegramToken = preferences.getString("bot_token", BOT_TOKEN);
   telegramChatID = preferences.getString("chat_id", CHAT_ID);
   callMeBotUser = preferences.getString("cmb_user", "");

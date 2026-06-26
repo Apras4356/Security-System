@@ -404,6 +404,17 @@ inline void handleSettings() {
           T("Enable Smoke Detector", "Ενεργοποίηση Ανιχνευτή Καπνού") +
           "</strong>";
   html += "</label><br><br>";
+
+  String wifiDetChecked = wifiDetectionEnabled ? "checked" : "";
+  html +=
+      "<label style='display: flex; align-items: center; cursor: pointer;'>";
+  html += "<input type='checkbox' name='wifi_det' value='1' style='width: "
+          "25px; height: 25px; margin-right: 15px;' " +
+          wifiDetChecked + ">";
+  html += "<strong>" +
+          T("Enable WiFi Detection", "Ενεργοποίηση Ανίχνευσης WiFi") +
+          "</strong>";
+  html += "</label><br><br>";
   html += "<hr style='border-color:#555; margin: 20px 0;'>";
 
   html += "<h3 style='color:#9b59b6;'>" + T("Google Home / Sinric Pro", "Google Home / Sinric Pro") + "</h3>";
@@ -474,6 +485,7 @@ inline void handleSaveSettings() {
   String newSinricDev = server.arg("sinric_dev");
   bool newLaserEnabled = server.hasArg("laser_en");
   bool newSmokeEnabled = server.hasArg("smoke_en");
+  bool newWifiDetectionEnabled = server.hasArg("wifi_det");
   int newArmDelay =
       server.hasArg("arm_delay") ? server.arg("arm_delay").toInt() : 10;
 
@@ -495,6 +507,7 @@ inline void handleSaveSettings() {
   preferences.putString("sinric_dev", newSinricDev);
   preferences.putBool("laser_en", newLaserEnabled);
   preferences.putBool("smoke_en", newSmokeEnabled);
+  preferences.putBool("wifi_det", newWifiDetectionEnabled);
   preferences.putInt("arm_delay", newArmDelay);
   preferences.end();
 
@@ -508,6 +521,7 @@ inline void handleSaveSettings() {
   sinricDeviceId = newSinricDev;
   laserEnabled = newLaserEnabled;
   smokeEnabled = newSmokeEnabled;
+  wifiDetectionEnabled = newWifiDetectionEnabled;
   armingDelaySeconds = newArmDelay;
 
   // Tell the Mouth about the new speaker

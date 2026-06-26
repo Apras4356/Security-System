@@ -129,6 +129,7 @@ float calculateGaitScore(int8_t *raw_csi_data, int len, float *ap_background,
 }
 
 void csi_rx_callback(void *ctx, wifi_csi_info_t *data) {
+  if (!wifiDetectionEnabled) return;
   if (!systemArmed) {
     gaitDisturbanceScore = 0;
     for (int i = 0; i < MAX_SENSING_APS; i++) {
