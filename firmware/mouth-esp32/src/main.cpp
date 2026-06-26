@@ -19,6 +19,10 @@ bool isLedGreen = false;
 // Button debounce tracking
 unsigned long lastButtonPress = 0;
 
+bool isBtStarted = false;
+unsigned long lastHeartbeatTime = 0;
+bool isArmed = false;
+
 Adafruit_NeoPixel LED_RGB(1, 22, NEO_GRBW + NEO_KHZ800);
 BluetoothA2DPSource a2dp_source;
 Preferences preferences;
@@ -75,8 +79,7 @@ void setup() {
   a2dp_source.set_volume(100);
 
   if (targetSpeaker != "") {
-    Serial.println("Starting Bluetooth stack...");
-    a2dp_source.start(targetSpeaker.c_str(), get_audio_data);
+    Serial.println("Ready. Waiting for ARMED heartbeat from Brain to start Bluetooth...");
   } else {
     Serial.println("No speaker name saved yet! Waiting for command from Brain...");
   }
@@ -131,6 +134,25 @@ void loop() {
       LED_RGB.clear(); 
       LED_RGB.show();
     }
+    else if (command.startsWith("H:")) {
+      lastHeartbeatTime = millis();
+      String state = command.substring(2);
+      if (state == "ARMED") {
+        if (!isBtStarted && targetSpeaker != "") {
+          Serial.println("Brain ARMED! Starting Bluetooth stack...");
+          a2dp_source.start(targetSpeaker.c_str(), get_audio_data);
+          isBtStarted = true;
+        }
+        isArmed = true;
+      } else if (state == "DISARMED") {
+        if (isBtStarted) {
+          Serial.println("Brain DISARMED! Rebooting to disable Bluetooth and save power...");
+          delay(1000);
+          ESP.restart();
+        }
+        isArmed = false;
+      }
+    }
     else if (command.startsWith("N:")) {
       String newSpeaker = command.substring(2); 
       Serial.println("New Speaker Received: [" + newSpeaker + "]");
@@ -143,6 +165,13 @@ void loop() {
       delay(1000);
       ESP.restart(); 
     }
+  }
+
+  // Heartbeat timeout check (Brain disconnected/unplugged)
+  if (isBtStarted && (millis() - lastHeartbeatTime > 5000)) {
+    Serial.println("Lost heartbeat from Brain! Rebooting to disable Bluetooth...");
+    delay(1000);
+    ESP.restart();
   }
   
   delay(10);
