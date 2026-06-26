@@ -5,7 +5,10 @@
 
 const char* brainIP = "255.255.255.255"; // Broadcast so the Brain can hear it anywhere
 WiFiUDP udp;
+WiFiUDP stateUdp;
 unsigned long lastPing = 0;
+unsigned long lastArmedSignal = 0;
+bool isArmed = false;
 
 void setup() {
   Serial.begin(115200);
@@ -32,14 +35,46 @@ void setup() {
   Serial.println(WiFi.macAddress());
   
   udp.begin(8888);
+  stateUdp.begin(8889);
 }
 
 void loop() {
-  // Send a packet every 50ms (20Hz)
-  if (millis() - lastPing > 50) {
-    udp.beginPacket(brainIP, 8888);
-    udp.write((const uint8_t*)"PING", 4);
-    udp.endPacket();
-    lastPing = millis();
+  int packetSize = stateUdp.parsePacket();
+  if (packetSize) {
+    char packetBuffer[255];
+    int len = stateUdp.read(packetBuffer, 255);
+    if (len > 0) packetBuffer[len] = 0;
+    String msg = String(packetBuffer);
+    if (msg == "STATE:ARMED") {
+      lastArmedSignal = millis();
+      if (!isArmed) {
+        Serial.println("System ARMED. Starting 20Hz radar PING...");
+        isArmed = true;
+      }
+    } else if (msg == "STATE:DISARMED") {
+      if (isArmed) {
+        Serial.println("System DISARMED. Entering low-power standby mode...");
+      }
+      isArmed = false;
+    }
+  }
+
+  // If we haven't heard from Brain in 5 seconds, assume it's offline/unplugged
+  if (isArmed && (millis() - lastArmedSignal > 5000)) {
+    Serial.println("Lost heartbeat from Brain. Entering low-power standby mode...");
+    isArmed = false;
+  }
+
+  if (isArmed) {
+    // Send a packet every 50ms (20Hz)
+    if (millis() - lastPing > 50) {
+      udp.beginPacket(brainIP, 8888);
+      udp.write((const uint8_t*)"PING", 4);
+      udp.endPacket();
+      lastPing = millis();
+    }
+  } else {
+    // Save CPU cycles and cool down the Wi-Fi modem while disarmed
+    delay(100);
   }
 }
