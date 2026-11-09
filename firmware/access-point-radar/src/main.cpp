@@ -4,6 +4,7 @@
 #include <WiFiManager.h>
 
 const char* brainIP = "255.255.255.255"; // Broadcast so the Brain can hear it anywhere
+#define RADAR_UDP_TOKEN "SecSys_Radar_2026"
 WiFiUDP udp;
 WiFiUDP stateUdp;
 unsigned long lastPing = 0;
@@ -22,7 +23,7 @@ void setup() {
   // wm.resetSettings(); // Un-comment this to wipe saved Wi-Fi credentials
   
   Serial.println("Connecting to Wi-Fi...");
-  bool res = wm.autoConnect("RadarNode-Setup", "12345678");
+  bool res = wm.autoConnect("RadarNode-Setup", "SecuredRadarSetup!");
 
   if (!res) {
     Serial.println("Failed to connect to Wi-Fi! Rebooting...");
@@ -45,13 +46,13 @@ void loop() {
     int len = stateUdp.read(packetBuffer, 255);
     if (len > 0) packetBuffer[len] = 0;
     String msg = String(packetBuffer);
-    if (msg == "STATE:ARMED") {
+    if (msg == "STATE:ARMED:" RADAR_UDP_TOKEN) {
       lastArmedSignal = millis();
       if (!isArmed) {
         Serial.println("System ARMED. Starting 20Hz radar PING...");
         isArmed = true;
       }
-    } else if (msg == "STATE:DISARMED") {
+    } else if (msg == "STATE:DISARMED:" RADAR_UDP_TOKEN) {
       if (isArmed) {
         Serial.println("System DISARMED. Entering low-power standby mode...");
       }
