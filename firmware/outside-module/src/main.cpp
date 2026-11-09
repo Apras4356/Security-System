@@ -18,12 +18,37 @@ MFRC522 rfid(SS_PIN, RST_PIN);
 RTC_DATA_ATTR uint8_t mainMacAddress[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 RTC_DATA_ATTR uint8_t mainChannel = 1;
 RTC_DATA_ATTR bool isPaired = false;
+RTC_DATA_ATTR uint32_t msgCounter = 0;
+
+#define ESPNOW_SECRET_KEY "SecSys_ESPNow_#99!"
 
 // --- DATA STRUCTURES ---
 typedef struct struct_message {
     char uid[30];
     float voltage;
+    uint32_t counter;
+    uint32_t authHash;
 } struct_message;
+
+inline uint32_t calculateAuthHash(const char* uid, uint32_t counter) {
+    uint32_t hash = 2166136261u;
+    const char* secret = ESPNOW_SECRET_KEY;
+    while (*secret) {
+        hash ^= (uint8_t)*secret++;
+        hash *= 16777619u;
+    }
+    const char* p = uid;
+    while (*p) {
+        hash ^= (uint8_t)*p++;
+        hash *= 16777619u;
+    }
+    uint8_t* c = (uint8_t*)&counter;
+    for (int i = 0; i < 4; i++) {
+        hash ^= c[i];
+        hash *= 16777619u;
+    }
+    return hash;
+}
 
 struct_message myData;
 
@@ -108,6 +133,9 @@ void setup() {
         int rawAdc = analogRead(BATT_PIN);
         myData.voltage = (rawAdc / 4095.0) * 3.3 * 2.0;
         scannedUID.toCharArray(myData.uid, 30);
+        msgCounter++;
+        myData.counter = msgCounter;
+        myData.authHash = calculateAuthHash(myData.uid, myData.counter);
 
         esp_now_peer_info_t peerInfo = {};
         peerInfo.encrypt = false;
