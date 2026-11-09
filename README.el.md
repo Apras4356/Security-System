@@ -158,3 +158,4 @@ pio run -d firmware/mouth-esp32 -t upload
 
 ## 📄 Άδεια Χρήσης
 Το έργο διατίθεται ως λογισμικό ανοιχτού κώδικα υπό την άδεια [MIT License](LICENSE).
+
