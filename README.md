@@ -151,3 +151,4 @@ pio run -d firmware/mouth-esp32 -t upload
 
 ## 📄 License
 This project is open-source and released under the [MIT License](LICENSE).
+
