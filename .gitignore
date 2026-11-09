@@ -21,3 +21,10 @@ Thumbs.db
 
 # Local history
 .history/
+
+# Backups & archives
+*-backups/
+*.bak
+*.backup
+*.zip
+*.FCBak
