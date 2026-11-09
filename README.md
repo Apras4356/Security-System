@@ -1,5 +1,12 @@
 # 🛡️ Integrated Smart Security & Wi-Fi CSI Radar System
 
+<div align="center">
+
+**Languages / Γλώσσες:**  
+[🇬🇧 English](README.md) &nbsp;•&nbsp; [🇬🇷 Ελληνικά](README.el.md)
+
+</div>
+
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-Supported-orange.svg)](https://platformio.org/)
 [![Framework](https://img.shields.io/badge/Framework-Arduino-blue.svg)](https://www.arduino.cc/)
 [![ESP32-S3](https://img.shields.io/badge/SoC-ESP32--S3-red.svg)](https://www.espressif.com/en/products/socs/esp32-s3)
