@@ -2,6 +2,8 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <WebServer.h>
+#include <LittleFS.h>
+#include <Update.h>
 
 #include "Config.h"
 
@@ -16,12 +18,23 @@ extern int armingDelaySeconds;
 extern String sinricAppKey;
 extern String sinricAppSecret;
 extern String sinricDeviceId;
+extern String webAdminUser;
+extern String webAdminPass;
 
 extern volatile bool pendingAlarmNotification;
 extern char alarmReason[128];
 extern bool laserEnabled;
 extern bool smokeEnabled;
 extern bool wifiDetectionEnabled;
+
+extern String autoArmTime;
+extern String autoDisarmTime;
+extern bool autoScheduleEnabled;
+extern bool autoArmAllDay;
+extern uint8_t activeWeekdays;
+extern String specificArmDates;
+extern int lastAutoArmDay;
+extern int lastAutoDisarmDay;
 
 extern WebServer server;
 extern Preferences preferences;

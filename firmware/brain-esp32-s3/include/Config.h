@@ -3,6 +3,8 @@
 #define BOT_TOKEN ""
 #define CHAT_ID ""
 #define SMART_BULB_IP "192.168.1.XXX"
+#define RADAR_UDP_TOKEN "SecSys_Radar_2026"
+#define ESPNOW_SECRET_KEY "SecSys_ESPNow_#99!"
 
 #define I2C_SDA 8
 #define I2C_SCL 9

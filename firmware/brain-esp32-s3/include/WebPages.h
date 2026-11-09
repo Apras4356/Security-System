@@ -36,6 +36,23 @@ extern void sendIRCommand(String btn);
 
 inline String T(String en, String el) { return isGreek ? el : en; }
 
+extern String webAdminUser;
+extern String webAdminPass;
+
+inline bool isWebAuthorized() {
+  String u = (webAdminUser.length() > 0) ? webAdminUser : "admin";
+  String p = (webAdminPass.length() > 0) ? webAdminPass : "admin";
+  return server.authenticate(u.c_str(), p.c_str());
+}
+
+inline bool requireAuth() {
+  if (!isWebAuthorized()) {
+    server.requestAuthentication(BASIC_AUTH, "Security System", "Access Denied: Authentication Required");
+    return false;
+  }
+  return true;
+}
+
 inline String getStyles() {
   String s = "<style>body{font-family: Arial; text-align: center; margin-top: "
              "50px; background-color: #222; color: white;} ";
@@ -89,12 +106,14 @@ inline String getStyles() {
 }
 
 inline void handleSetLang() {
+  if (!requireAuth()) return;
   isGreek = !isGreek;
   server.sendHeader("Location", "/");
   server.send(302, "text/plain", "");
 }
 
 inline void handleRoot() {
+  if (!requireAuth()) return;
   String soundStatus = (isSirenDetected)
                            ? T("<span style='color:red;'>YES</span>",
                                "<span style='color:red;'>ΝΑΙ</span>")
@@ -117,6 +136,9 @@ inline void handleRoot() {
 
   String html = "<html><head><meta charset='UTF-8'><meta name='viewport' "
                 "content='width=device-width, initial-scale=1'>";
+  html += "<link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css'>";
+  html += "<link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css'>";
+  html += "<script src='https://cdn.jsdelivr.net/npm/flatpickr'></script>";
   html += getStyles() + "</head><body>";
 
   html += "<div style='text-align:right; padding:10px; max-width:600px; "
@@ -160,7 +182,8 @@ inline void handleRoot() {
   html += "<a href='/settings' class='btn btn-orange'>" +
           T("SETUP", "ΡΥΘΜΙΣΕΙΣ") + "</a>";
   html +=
-      "<a href='/help' class='btn btn-gray'>" + T("HELP", "ΒΟΗΘΕΙΑ") + "</a>";
+      "<a href='/help' class='btn btn-gray'>" + T("HELP", "ΒΟΗΘΕΙΑ") + "</a><br>";
+  html += "<a href='/ota' class='btn btn-red'>" + T("OTA UPDATE", "ΑΝΑΒΑΘΜΙΣΗ OTA") + "</a>";
 
   html += "<div id='learnOverlay'>📡 " +
           T("Waiting for remote...", "Αναμονή για τηλεχειριστήριο...") +
@@ -327,6 +350,7 @@ inline void handleRoot() {
 }
 
 inline void handleResetWiFi() {
+  if (!requireAuth()) return;
   String html = "<html><head><meta charset='UTF-8'><meta name='viewport' "
                 "content='width=device-width, initial-scale=1'>" +
                 getStyles();
@@ -349,9 +373,14 @@ inline void handleResetWiFi() {
 }
 
 inline void handleSettings() {
+  if (!requireAuth()) return;
   String html = "<html><head><meta charset='UTF-8'><meta name='viewport' "
                 "content='width=device-width, initial-scale=1'>" +
-                getStyles() + "</head><body>";
+                getStyles();
+  html += "<link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css'>";
+  html += "<link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css'>";
+  html += "<script src='https://cdn.jsdelivr.net/npm/flatpickr'></script>";
+  html += "</head><body>";
   html += "<h1>" + T("System Configuration", "Ρυθμίσεις Συστήματος") + "</h1>";
   html += "<div style='background:#333; padding:20px; max-width: 400px; "
           "margin: 0 auto; border-radius: 8px;'>";
@@ -364,14 +393,29 @@ inline void handleSettings() {
   html += "<div style='background:#333; padding:20px; max-width: 400px; "
           "margin: 20px auto 0 auto; border-radius: 8px;'>";
   html += "<form action='/savesettings' method='POST'>";
+
+  html += "<h3 style='color:#3498db;'>" + T("Web Administrator Access", "Ασφάλεια Διαχειριστή") + "</h3>";
+  if (webAdminPass == "admin") {
+    html += "<div style='background:#c0392b; color:#fff; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-weight:bold; font-size:14px;'>" +
+            T("⚠️ Default password 'admin' is active! Please set a custom password below.",
+              "⚠️ Ο προεπιλεγμένος κωδικός 'admin' είναι ενεργός! Ορίστε νέο κωδικό παρακάτω.") + "</div>";
+  }
+  html += "<strong>" + T("Admin Username", "Όνομα Χρήστη Διαχειριστή") + "</strong><br>";
+  html += "<input type='text' name='web_user' value='" + webAdminUser + "' required><br><br>";
+  html += "<strong>" + T("Admin Password (leave blank to keep current)", "Κωδικός Διαχειριστή (αφήστε κενό για διατήρηση)") + "</strong><br>";
+  html += "<input type='password' name='web_pass' placeholder='••••••••••••'><br><br>";
+  html += "<hr style='border-color:#555; margin: 20px 0;'>";
+
   html += "<h3 style='color:#e67e22;'>" +
           T("Telegram Settings", "Ρυθμίσεις Telegram") + "</h3>";
   html += "<strong>" + T("Bot Token", "Bot Token") + "</strong><br>";
-  html += "<input type='text' name='bot_token' value='" + telegramToken +
-          "' required><br>";
+  String botTokenPlaceholder = (telegramToken.length() > 0)
+      ? T("Saved (Leave blank to keep current)", "Αποθηκευμένο (Αφήστε κενό)")
+      : T("Enter Bot Token", "Εισάγετε Bot Token");
+  html += "<input type='password' name='bot_token' placeholder='" + botTokenPlaceholder + "'><br>";
   html += "<strong>" + T("Chat ID", "Chat ID") + "</strong><br>";
   html += "<input type='text' name='chat_id' value='" + telegramChatID +
-          "' required><br><br>";
+          "' placeholder='Chat ID'><br><br>";
   html += "<strong>" + T("CallMeBot Username", "Όνομα Χρήστη CallMeBot") +
           "</strong><br>";
   html += "<input type='text' name='cmb_user' value='" + callMeBotUser +
@@ -380,6 +424,30 @@ inline void handleSettings() {
           "</strong><br>";
   html += "<input type='number' name='arm_delay' value='" +
           String(armingDelaySeconds) + "' min='1' max='120' required><br><br>";
+  html += "<hr style='border-color:#555; margin: 20px 0;'>";
+  html += "<h3 style='color:#3498db;'>" + T("Scheduled Arming", "Χρονοδιάγραμμα") + "</h3>";
+  
+  String schChecked = autoScheduleEnabled ? "checked" : "";
+  html += "<label style='display: flex; align-items: center; cursor: pointer;'><input type='checkbox' name='auto_sch_en' value='1' style='width: 25px; height: 25px; margin-right: 15px;' " + schChecked + "><strong>" + T("Enable Scheduling", "Ενεργοποίηση") + "</strong></label><br>";
+  
+  html += "<strong>" + T("Arm Time:", "Ώρα Όπλισης:") + "</strong> <input type='time' name='auto_arm' value='" + autoArmTime + "' style='width:120px;'><br>";
+  html += "<strong>" + T("Disarm Time:", "Ώρα Αφόπλισης:") + "</strong> <input type='time' name='auto_disarm' value='" + autoDisarmTime + "' style='width:120px;'><br>";
+  
+  String allDayChecked = autoArmAllDay ? "checked" : "";
+  html += "<label style='display: flex; align-items: center; cursor: pointer;'><input type='checkbox' name='auto_allday' value='1' style='width: 25px; height: 25px; margin-right: 15px;' " + allDayChecked + "><strong>" + T("Armed All Day (Skip Auto-Disarm)", "Οπλισμένο Όλη Μέρα (Χωρίς Αφόπλιση)") + "</strong></label><br>";
+  
+  html += "<strong>" + T("Active Days:", "Ενεργές Ημέρες:") + "</strong><br>";
+  const char* daysEn[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+  const char* daysGr[] = {"Δευ", "Τρι", "Τετ", "Πεμ", "Παρ", "Σαβ", "Κυρ"};
+  for (int i=0; i<7; i++) {
+    String chk = (activeWeekdays & (1<<i)) ? "checked" : "";
+    html += "<label style='margin-right:10px;'><input type='checkbox' name='wd_" + String(i) + "' value='1' " + chk + "> " + T(daysEn[i], daysGr[i]) + "</label>";
+    if (i == 3) html += "<br>";
+  }
+  html += "<br><br><strong>" + T("Specific Dates (DD/MM):", "Ειδικές Ημερομηνίες (ΗΗ/ΜΜ):") + "</strong><br>";
+  html += "<input type='text' id='spec_dates' name='spec_dates' value='" + specificArmDates + "' placeholder='Click to select dates...'><br>";
+  html += "<script>flatpickr('#spec_dates', { mode: 'multiple', dateFormat: 'd/m' });</script>";
+
   html += "<hr style='border-color:#555; margin: 20px 0;'>";
   html += "<h3 style='color:#f1c40f;'>" +
           T("Hardware Toggles", "Διακόπτες Υλικού") + "</h3>";
@@ -419,9 +487,15 @@ inline void handleSettings() {
 
   html += "<h3 style='color:#9b59b6;'>" + T("Google Home / Sinric Pro", "Google Home / Sinric Pro") + "</h3>";
   html += "<strong>" + T("App Key", "App Key") + "</strong><br>";
-  html += "<input type='text' name='sinric_key' value='" + sinricAppKey + "' placeholder='Sinric App Key'><br><br>";
+  String sinricKeyPlaceholder = (sinricAppKey.length() > 0)
+      ? T("Saved (Leave blank to keep current)", "Αποθηκευμένο (Αφήστε κενό)")
+      : T("Enter Sinric App Key", "Εισάγετε Sinric App Key");
+  html += "<input type='password' name='sinric_key' placeholder='" + sinricKeyPlaceholder + "'><br><br>";
   html += "<strong>" + T("App Secret", "App Secret") + "</strong><br>";
-  html += "<input type='password' name='sinric_sec' value='" + sinricAppSecret + "' placeholder='Sinric App Secret'><br><br>";
+  String sinricSecPlaceholder = (sinricAppSecret.length() > 0)
+      ? T("Saved (Leave blank to keep current)", "Αποθηκευμένο (Αφήστε κενό)")
+      : T("Enter Sinric App Secret", "Εισάγετε Sinric App Secret");
+  html += "<input type='password' name='sinric_sec' placeholder='" + sinricSecPlaceholder + "'><br><br>";
   html += "<strong>" + T("Device ID (Switch)", "Device ID (Διακόπτης)") + "</strong><br>";
   html += "<input type='text' name='sinric_dev' value='" + sinricDeviceId + "' placeholder='Sinric Device ID'><br><br>";
   html += "<hr style='border-color:#555; margin: 20px 0;'>";
@@ -476,6 +550,9 @@ inline void handleSettings() {
 }
 
 inline void handleSaveSettings() {
+  if (!requireAuth()) return;
+  String newWebUser = server.arg("web_user");
+  String newWebPass = server.arg("web_pass");
   String newToken = server.arg("bot_token");
   String newChatID = server.arg("chat_id");
   String newCMBUser = server.arg("cmb_user");
@@ -486,9 +563,20 @@ inline void handleSaveSettings() {
   bool newLaserEnabled = server.hasArg("laser_en");
   bool newSmokeEnabled = server.hasArg("smoke_en");
   bool newWifiDetectionEnabled = server.hasArg("wifi_det");
+  bool newAutoSch = server.hasArg("auto_sch_en");
+  bool newAllDay = server.hasArg("auto_allday");
+  String newArm = server.arg("auto_arm");
+  String newDisarm = server.arg("auto_disarm");
+  String newSpec = server.arg("spec_dates");
+  uint8_t newWD = 0;
+  for (int i=0; i<7; i++) {
+    if (server.hasArg("wd_" + String(i))) newWD |= (1<<i);
+  }
   int newArmDelay =
       server.hasArg("arm_delay") ? server.arg("arm_delay").toInt() : 10;
 
+  newWebUser.trim();
+  newWebPass.trim();
   newToken.trim();
   newChatID.trim();
   newCMBUser.trim();
@@ -498,16 +586,43 @@ inline void handleSaveSettings() {
   newSinricDev.trim();
 
   preferences.begin("sys_prefs", false);
-  preferences.putString("bot_token", newToken);
+  if (newWebUser.length() > 0) {
+    preferences.putString("web_user", newWebUser);
+    webAdminUser = newWebUser;
+  }
+  if (newWebPass.length() > 0) {
+    preferences.putString("web_pass", newWebPass);
+    webAdminPass = newWebPass;
+  }
+  if (newToken.length() > 0) {
+    preferences.putString("bot_token", newToken);
+    telegramToken = newToken;
+  }
   preferences.putString("chat_id", newChatID);
+  telegramChatID = newChatID;
   preferences.putString("cmb_user", newCMBUser);
+  callMeBotUser = newCMBUser;
   preferences.putString("bt_speaker", newSpeaker);
-  preferences.putString("sinric_key", newSinricKey);
-  preferences.putString("sinric_sec", newSinricSec);
+  targetSpeaker = newSpeaker;
+  if (newSinricKey.length() > 0) {
+    preferences.putString("sinric_key", newSinricKey);
+    sinricAppKey = newSinricKey;
+  }
+  if (newSinricSec.length() > 0) {
+    preferences.putString("sinric_sec", newSinricSec);
+    sinricAppSecret = newSinricSec;
+  }
   preferences.putString("sinric_dev", newSinricDev);
+  sinricDeviceId = newSinricDev;
   preferences.putBool("laser_en", newLaserEnabled);
   preferences.putBool("smoke_en", newSmokeEnabled);
   preferences.putBool("wifi_det", newWifiDetectionEnabled);
+  preferences.putBool("auto_sch_en", newAutoSch);
+  preferences.putBool("auto_allday", newAllDay);
+  preferences.putString("auto_arm", newArm);
+  preferences.putString("auto_disarm", newDisarm);
+  preferences.putString("spec_dates", newSpec);
+  preferences.putUChar("active_wd", newWD);
   preferences.putInt("arm_delay", newArmDelay);
   preferences.end();
 
@@ -522,6 +637,12 @@ inline void handleSaveSettings() {
   laserEnabled = newLaserEnabled;
   smokeEnabled = newSmokeEnabled;
   wifiDetectionEnabled = newWifiDetectionEnabled;
+  autoScheduleEnabled = newAutoSch;
+  autoArmAllDay = newAllDay;
+  autoArmTime = newArm;
+  autoDisarmTime = newDisarm;
+  specificArmDates = newSpec;
+  activeWeekdays = newWD;
   armingDelaySeconds = newArmDelay;
 
   // Tell the Mouth about the new speaker
@@ -545,6 +666,7 @@ inline void handleSaveSettings() {
 }
 
 inline void handleHelp() {
+  if (!requireAuth()) return;
   String html = "<html><head><meta charset='UTF-8'><meta name='viewport' "
                 "content='width=device-width, initial-scale=1'>" +
                 getStyles() + "</head><body>";
@@ -582,6 +704,10 @@ inline void handleHelp() {
         "Ρυθμιστικό για τον αισθητήρα ήχου. Μικρότερες τιμές τον κάνουν πιο "
         "ευαίσθητο στους θορύβους.") +
       "</li>";
+  html += "<li><b>" + T("Radar Visualization:", "Απεικόνιση Ραντάρ:") + "</b> " +
+          T("Click the <b>RADAR</b> button to see a live 3D visualization of the WiFi CSI mesh and current gait disturbance levels.",
+            "Πατήστε το κουμπί <b>ΡΑΝΤΑΡ</b> για να δείτε μια ζωντανή τρισδιάστατη απεικόνιση του δικτύου WiFi CSI και των επιπέδων διαταραχής κίνησης.") +
+          "</li>";
   html += "</ul>";
 
   // 2. Access Management (Cards & Zones)
@@ -672,6 +798,18 @@ inline void handleHelp() {
         "audio connection.",
         "Βάλτε το ΑΚΡΙΒΕΣ όνομα του ηχείου σας για αυτόματη σύνδεση ήχου.") +
       "</li>";
+  html += "<li><b>" + T("Google Home / Sinric Pro:", "Google Home / Sinric Pro:") + "</b> " +
+          T("Connect your alarm to Google Assistant/Alexa. Get your App Key, App Secret, and Device ID from <b>sinric.pro</b> and paste them in the settings.",
+            "Συνδέστε τον συναγερμό με το Google Assistant/Alexa. Πάρτε τα App Key, App Secret, και Device ID από το <b>sinric.pro</b> και βάλτε τα στις ρυθμίσεις.") +
+          "</li>";
+  html += "<li><b>" + T("Radar Nodes (CSI):", "Κόμβοι Ραντάρ (CSI):") + "</b> " +
+          T("Add MAC addresses of other ESP32 devices to create an invisible WiFi motion mesh. The system detects intruders based on WiFi signal disturbances between these nodes.",
+            "Προσθέστε διευθύνσεις MAC από άλλα ESP32 για να δημιουργήσετε ένα αόρατο δίκτυο ανίχνευσης κίνησης (WiFi CSI).") +
+          "</li>";
+  html += "<li><b>" + T("Hardware Toggles & Arm Delay:", "Διακόπτες Υλικού & Χρόνος Όπλισης:") + "</b> " +
+          T("Configure the delay (in seconds) before the alarm arms. You can also manually enable or disable the Laser Tripwire, Smoke Detector, and WiFi Detection from the toggles.",
+            "Ορίστε τον χρόνο (σε δευτ.) πριν οπλιστεί ο συναγερμός. Μπορείτε επίσης να ενεργοποιήσετε/απενεργοποιήσετε το Laser, τον Ανιχνευτή Καπνού, και την Ανίχνευση WiFi.") +
+          "</li>";
   html += "</ul>";
 
   // 5. WiFi & Reset
@@ -689,12 +827,31 @@ inline void handleHelp() {
       "<li>" +
       T("The system will erase the network and reboot. Look for a network "
         "called <code>SecuritySystem-Setup</code> (Password: "
-        "<code>12345678</code>) on your phone to connect it to the new router.",
+        "<code>SecuredESP32Setup!</code>) on your phone to connect it to the new router.",
         "Το σύστημα θα διαγράψει το δίκτυο και θα κάνει επανεκκίνηση. Ψάξτε το "
         "δίκτυο <code>SecuritySystem-Setup</code> (Κωδικός: "
-        "<code>12345678</code>) στο κινητό σας για να το συνδέσετε στο νέο "
+        "<code>SecuredESP32Setup!</code>) στο κινητό σας για να το συνδέσετε στο νέο "
         "ρούτερ.") +
       "</li>";
+  html += "</ul>";
+
+  // 6. New Features (Scheduling, Logs, OTA)
+  html += "<h2 style='color:#f1c40f; margin-bottom: 5px; border-bottom: 1px "
+          "solid #555; padding-bottom: 5px;'>" +
+          T("📅 Scheduling & 🗄️ Logs", "📅 Χρονοδιάγραμμα & 🗄️ Ιστορικό") + "</h2>";
+  html += "<ul style='margin-top: 5px;'>";
+  html += "<li><b>" + T("Scheduled Arming:", "Χρονοδιάγραμμα Όπλισης:") + "</b> " +
+          T("In the Settings menu, you can configure the system to auto-arm and auto-disarm at specific times. You can select active days of the week, choose 'Armed All Day', and even use the calendar to select specific holiday dates.",
+            "Στις Ρυθμίσεις, μπορείτε να ορίσετε αυτόματη όπλιση και αφόπλιση. Επιλέξτε μέρες, ενεργοποιήστε το 'Οπλισμένο Όλη Μέρα', και χρησιμοποιήστε το ημερολόγιο για ειδικές ημερομηνίες (αργίες).") +
+          "</li>";
+  html += "<li><b>" + T("Persistent Logs:", "Μόνιμο Ιστορικό:") + "</b> " +
+          T("All system events (cards tapped, alarms triggered) are securely saved. Click 'Download File' in the Logs menu to save them to your device as a CSV file.",
+            "Όλα τα γεγονότα αποθηκεύονται μόνιμα. Πατήστε 'Λήψη Αρχείου' στο μενού Ιστορικό για να τα αποθηκεύσετε στο κινητό/PC σας ως αρχείο CSV.") +
+          "</li>";
+  html += "<li><b>" + T("OTA Updates:", "Αναβαθμίσεις OTA:") + "</b> " +
+          T("Click the red 'OTA UPDATE' button on the dashboard to wirelessly update the ESP32 firmware without any USB cables.",
+            "Πατήστε το κόκκινο κουμπί 'ΑΝΑΒΑΘΜΙΣΗ OTA' στον πίνακα για να αναβαθμίσετε το λογισμικό ασύρματα χωρίς καλώδιο USB.") +
+          "</li>";
   html += "</ul>";
 
   html += "</div><br><a href='/' class='btn btn-gray'>" +
@@ -707,6 +864,7 @@ extern void triggerSeinagermos(String reason);
 extern void disarmSystem();
 
 inline void handleArmMesh() {
+  if (!requireAuth()) return;
   if (server.hasArg("t")) {
     pendingArmTimer = server.arg("t").toInt();
     if (pendingArmTimer <= 0)
@@ -718,16 +876,19 @@ inline void handleArmMesh() {
 }
 
 inline void handleWebStart() {
+  if (!requireAuth()) return;
   triggerSeinagermos("Web Interface Button");
   server.send(200, "text/plain", "OK");
 }
 
 inline void handleWebStop() {
+  if (!requireAuth()) return;
   disarmSystem();
   server.send(200, "text/plain", "OK");
 }
 
 inline void handleEnroll() {
+  if (!requireAuth()) return;
   isEnrollMode = true;
   pendingUID = "";
   server.sendHeader("Location", "/cards");
@@ -735,6 +896,7 @@ inline void handleEnroll() {
 }
 
 inline void handleCancelEnroll() {
+  if (!requireAuth()) return;
   isEnrollMode = false;
   pendingUID = "";
   server.sendHeader("Location", "/cards");
@@ -742,6 +904,7 @@ inline void handleCancelEnroll() {
 }
 
 inline void handleSaveCard() {
+  if (!requireAuth()) return;
   // WebServer automatically handles the POST body, no manual parsing needed!
   String uid = server.arg("uid");
   String name = server.arg("name");
@@ -773,12 +936,15 @@ inline void handleSaveCard() {
 }
 
 inline void handleLogs() {
+  if (!requireAuth()) return;
   String html = "<html><head><meta charset='UTF-8'><meta name='viewport' "
                 "content='width=device-width, initial-scale=1'>" +
                 getStyles() + "</head><body>";
   html += "<h1>" + T("System Logs", "Ιστορικό Συστήματος") + "</h1>";
   html += "<div style='background:#333; padding:20px; max-width:600px; "
           "margin:0 auto; border-radius:8px; text-align:left;'>";
+  html += "<a href='/downloadlogs' class='btn btn-blue'>" + T("Download File", "Λήψη Αρχείου") + "</a>";
+  html += "<a href='/clearlogs' class='btn btn-red' onclick=\"return confirm('Clear all logs?');\">" + T("Clear Logs", "Εκκαθάριση") + "</a><br><br>";
 
   // Send in chunks to save RAM
   server.setContentLength(CONTENT_LENGTH_UNKNOWN);
@@ -809,6 +975,7 @@ inline void handleLogs() {
 }
 
 inline void handleCards() {
+  if (!requireAuth()) return;
   String html = "<html><head><meta charset='UTF-8'><meta name='viewport' "
                 "content='width=device-width, initial-scale=1'>" +
                 getStyles() + "</head><body>";
@@ -922,6 +1089,7 @@ inline void handleCards() {
 }
 
 inline void handleZones() {
+  if (!requireAuth()) return;
   String html = "<html><head><meta charset='UTF-8'><meta name='viewport' "
                 "content='width=device-width, initial-scale=1'>" +
                 getStyles() + "</head><body>";
@@ -983,6 +1151,7 @@ inline void handleZones() {
 }
 
 inline void handleSaveZone() {
+  if (!requireAuth()) return;
   String zname = server.arg("zname");
   String zssStr = server.arg("zss");
   String zpinStr = server.arg("zpin");
@@ -1031,6 +1200,7 @@ inline void handleSaveZone() {
 }
 
 inline void handleDeleteZone() {
+  if (!requireAuth()) return;
   String idStr = server.arg("id");
   if (idStr != "") {
     int id = idStr.toInt();
@@ -1046,6 +1216,7 @@ inline void handleDeleteZone() {
 }
 
 inline void handleDeleteCard() {
+  if (!requireAuth()) return;
   String uidToDelete = server.arg("uid");
   if (uidToDelete != "") {
     int foundIndex = -1;
@@ -1068,10 +1239,12 @@ inline void handleDeleteCard() {
 }
 
 inline void handleCheckPendingUID() {
+  if (!requireAuth()) return;
   server.send(200, "application/json", "{\"uid\":\"" + pendingUID + "\"}");
 }
 
 inline void handleStatusData() {
+  if (!requireAuth()) return;
   String json = "{";
   json += "\"armed\":" + String(systemArmed ? "true" : "false") + ",";
   json += "\"siren\":" + String(isSirenDetected ? "true" : "false") + ",";
@@ -1084,6 +1257,7 @@ inline void handleStatusData() {
 }
 
 inline void handleSetSens() {
+  if (!requireAuth()) return;
   if (server.hasArg("val")) {
     extern int webSoundSensitivity;
     webSoundSensitivity = server.arg("val").toInt();
@@ -1099,6 +1273,7 @@ inline void handleSetSens() {
 }
 
 inline void handleToggleDev() {
+  if (!requireAuth()) return;
   extern bool devModeActive;
   devModeActive = !devModeActive;
 
@@ -1107,6 +1282,7 @@ inline void handleToggleDev() {
 }
 
 inline void handleIRLearnCmd() {
+  if (!requireAuth()) return;
   if (server.hasArg("btn")) {
     activeLearningButton = server.arg("btn");
     Serial.println("Learning mode activated for: " + activeLearningButton);
@@ -1117,6 +1293,7 @@ inline void handleIRLearnCmd() {
 }
 
 inline void handleIRLearnCheck() {
+  if (!requireAuth()) return;
   if (activeLearningButton == "") {
     server.send(200, "text/plain", "DONE");
   } else {
@@ -1125,6 +1302,7 @@ inline void handleIRLearnCheck() {
 }
 
 inline void handleIRCommand() {
+  if (!requireAuth()) return;
   if (server.hasArg("cmd")) {
     String cmd = server.arg("cmd");
     Serial.println("Web Remote triggered: " + cmd);
@@ -1140,6 +1318,7 @@ inline void handleIRCommand() {
 
 // --- CSI Data JSON Endpoint ---
 inline void handleCSIData() {
+  if (!requireAuth()) return;
   String json = "{";
   json += "\"armed\":" + String(systemArmed ? "true" : "false") + ",";
   json += "\"gaitScore\":" + String(gaitDisturbanceScore, 3) + ",";
@@ -1185,6 +1364,7 @@ inline void handleCSIData() {
 
 // --- 3D Radar Visualization Page ---
 inline void handleRadar() {
+  if (!requireAuth()) return;
   server.setContentLength(CONTENT_LENGTH_UNKNOWN);
   server.send(200, "text/html", "");
 
@@ -1526,6 +1706,7 @@ inline void handleRadar() {
 }
 
 inline void handleAddMac() {
+  if (!requireAuth()) return;
   if (server.hasArg("new_mac")) {
     String macStr = server.arg("new_mac");
     macStr.trim();
@@ -1543,6 +1724,7 @@ inline void handleAddMac() {
 }
 
 inline void handleDeleteMac() {
+  if (!requireAuth()) return;
   if (server.hasArg("id")) {
     extern void removeSensingAP(int index);
     int id = server.arg("id").toInt();
@@ -1550,6 +1732,84 @@ inline void handleDeleteMac() {
   }
   server.sendHeader("Location", "/settings");
   server.send(302, "text/plain", "");
+}
+
+inline void handleDownloadLogs() {
+  if (!requireAuth()) return;
+  File f = LittleFS.open("/logs.txt", "r");
+  if (!f) {
+    server.send(404, "text/plain", "File not found");
+    return;
+  }
+  server.sendHeader("Content-Type", "text/csv");
+  server.sendHeader("Content-Disposition", "attachment; filename=logs.csv");
+  server.streamFile(f, "text/csv");
+  f.close();
+}
+
+inline void handleClearLogs() {
+  if (!requireAuth()) return;
+  LittleFS.remove("/logs.txt");
+  for (int i=0; i<MAX_LOGS; i++) rfidLogs[i] = "";
+  extern int logIndex;
+  logIndex = 0;
+  server.sendHeader("Location", "/logs");
+  server.send(302, "text/plain", "");
+}
+
+inline void handleOTA() {
+  if (!requireAuth()) return;
+  String html = "<html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1'>" + getStyles() + "</head><body>";
+  html += "<h1>" + T("OTA Firmware Update", "Αναβάθμιση Υλικολογισμικού") + "</h1>";
+  html += "<div style='background:#333; padding:20px; max-width:600px; margin:0 auto; border-radius:8px;'>";
+  html += "<form method='POST' action='/update' enctype='multipart/form-data'>";
+  html += "<input type='file' name='update' style='color:white;'><br><br>";
+  html += "<input type='submit' class='btn btn-red' value='" + T("UPDATE", "ΑΝΑΒΑΘΜΙΣΗ") + "'>";
+  html += "</form></div><br><a href='/' class='btn btn-gray'>" + T("BACK", "ΠΙΣΩ") + "</a></body></html>";
+  server.send(200, "text/html", html);
+}
+
+inline void handleOTAUpdate() {
+  if (!requireAuth()) return;
+  server.sendHeader("Connection", "close");
+  server.send(200, "text/plain", (Update.hasError()) ? "UPDATE FAILED" : "UPDATE SUCCESS! REBOOTING...");
+  delay(1000);
+  ESP.restart();
+}
+
+inline void handleOTAUpload() {
+  if (!isWebAuthorized()) {
+    Update.abort();
+    return;
+  }
+  HTTPUpload& upload = server.upload();
+  if (upload.status == UPLOAD_FILE_START) {
+    Serial.printf("Update: %s\n", upload.filename.c_str());
+    if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+      Update.printError(Serial);
+    }
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    // Verified check on the very first chunk: ESP32 image magic byte must be 0xE9
+    if (Update.progress() == 0 && upload.currentSize > 0) {
+      if (upload.buf[0] != 0xE9) {
+        Serial.println("OTA Error: Invalid firmware magic byte (expected 0xE9). Aborting!");
+        Update.abort();
+        return;
+      }
+    }
+    if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+      Update.printError(Serial);
+    }
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (Update.end(true)) {
+      Serial.printf("Update Success: %u bytes\nRebooting...\n", upload.totalSize);
+    } else {
+      Update.printError(Serial);
+    }
+  } else if (upload.status == UPLOAD_FILE_ABORTED) {
+    Update.abort();
+    Serial.println("Update aborted");
+  }
 }
 
 inline void setupWebHandlers() {
@@ -1582,4 +1842,9 @@ inline void setupWebHandlers() {
   server.on("/api/learn_status", HTTP_GET, handleIRLearnCheck);
   server.on("/api/csi_data", HTTP_GET, handleCSIData);
   server.on("/radar", HTTP_GET, handleRadar);
+  
+  server.on("/downloadlogs", HTTP_GET, handleDownloadLogs);
+  server.on("/clearlogs", HTTP_GET, handleClearLogs);
+  server.on("/ota", HTTP_GET, handleOTA);
+  server.on("/update", HTTP_POST, handleOTAUpdate, handleOTAUpload);
 }

@@ -38,6 +38,15 @@ bool laserEnabled = true;
 bool smokeEnabled = true;
 bool wifiDetectionEnabled = true;
 
+String autoArmTime = "";
+String autoDisarmTime = "";
+bool autoScheduleEnabled = false;
+bool autoArmAllDay = false;
+uint8_t activeWeekdays = 0;
+String specificArmDates = "";
+int lastAutoArmDay = -1;
+int lastAutoDisarmDay = -1;
+
 Preferences preferences;
 
 Adafruit_NeoPixel LED_RGB(1, 48, NEO_GRBW + NEO_KHZ800);
@@ -51,7 +60,29 @@ unsigned long lastBotCheck = 0;
 typedef struct struct_message {
   char uid[30];
   float voltage;
+  uint32_t counter;
+  uint32_t authHash;
 } struct_message;
+
+inline uint32_t calculateAuthHash(const char* uid, uint32_t counter) {
+  uint32_t hash = 2166136261u;
+  const char* secret = ESPNOW_SECRET_KEY;
+  while (*secret) {
+    hash ^= (uint8_t)*secret++;
+    hash *= 16777619u;
+  }
+  const char* p = uid;
+  while (*p) {
+    hash ^= (uint8_t)*p++;
+    hash *= 16777619u;
+  }
+  uint8_t* c = (uint8_t*)&counter;
+  for (int i = 0; i < 4; i++) {
+    hash ^= c[i];
+    hash *= 16777619u;
+  }
+  return hash;
+}
 
 struct_message incomingRead;
 volatile bool newRfidAvailable = false;
@@ -61,7 +92,12 @@ int armingDelaySeconds = 10;
 String sinricAppKey = "";
 String sinricAppSecret = "";
 String sinricDeviceId = "";
+String webAdminUser = "admin";
+String webAdminPass = "admin";
 uint8_t lastRemoteMac[6];
+uint8_t pairedOutsideMac[6] = {0};
+bool hasPairedOutsideMac = false;
+uint32_t lastRemoteCounter = 0;
 bool isGreek = false;
 
 volatile float remoteBatteryVoltage = 0.0;
@@ -92,8 +128,44 @@ void passiveBuzzerBeep(int durationMs) {
 }
 
 void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
+  if (len < sizeof(struct_message)) return;
+
+  struct_message tempMsg;
+  memcpy(&tempMsg, incomingData, sizeof(tempMsg));
+
+  // 1. Authenticate packet signature
+  if (tempMsg.authHash != calculateAuthHash(tempMsg.uid, tempMsg.counter)) {
+    Serial.println("⛔ ESP-NOW: Rejected packet with invalid auth signature!");
+    return;
+  }
+
+  // 2. Replay attack protection (counter must increase; allow 1 for fresh reboot)
+  if (tempMsg.counter <= lastRemoteCounter && tempMsg.counter != 1) {
+    Serial.printf("⛔ ESP-NOW: Rejected replayed packet! Counter: %u <= %u\n", tempMsg.counter, lastRemoteCounter);
+    return;
+  }
+  lastRemoteCounter = tempMsg.counter;
+
+  // 3. Sender MAC verification
+  if (hasPairedOutsideMac) {
+    if (memcmp(mac, pairedOutsideMac, 6) != 0) {
+      Serial.printf("⛔ ESP-NOW: Rejected packet from unauthorized MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                    mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+      return;
+    }
+  } else {
+    // Auto-pair with first authenticated packet
+    memcpy(pairedOutsideMac, mac, 6);
+    hasPairedOutsideMac = true;
+    preferences.begin("sys_prefs", false);
+    preferences.putBytes("out_mac", pairedOutsideMac, 6);
+    preferences.end();
+    Serial.printf("✅ ESP-NOW: Paired with Outside Module MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                  mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  }
+
   memcpy(lastRemoteMac, mac, 6);
-  memcpy(&incomingRead, incomingData, sizeof(incomingRead));
+  incomingRead = tempMsg;
   remoteBatteryVoltage = incomingRead.voltage;
   strlcpy(espNowUID, incomingRead.uid, sizeof(espNowUID));
   newRfidAvailable = true;
@@ -132,12 +204,50 @@ void communicationLoop(void *pvParameters) {
     if (millis() - lastStateBroadcast > 1000) {
       stateUdp.beginPacket("255.255.255.255", 8889);
       if (systemArmed) {
-        stateUdp.print("STATE:ARMED");
+        stateUdp.print("STATE:ARMED:" RADAR_UDP_TOKEN);
       } else {
-        stateUdp.print("STATE:DISARMED");
+        stateUdp.print("STATE:DISARMED:" RADAR_UDP_TOKEN);
       }
       stateUdp.endPacket();
       lastStateBroadcast = millis();
+    }
+    
+    static unsigned long lastScheduleCheck = 0;
+    if (autoScheduleEnabled && millis() - lastScheduleCheck > 10000) {
+      lastScheduleCheck = millis();
+      struct tm timeinfo;
+      if (getLocalTime(&timeinfo)) {
+        char dateStr[6];
+        strftime(dateStr, sizeof(dateStr), "%d/%m", &timeinfo);
+        String todayDate = String(dateStr);
+        
+        bool isSpecificDate = (specificArmDates.indexOf(todayDate) >= 0);
+        
+        // Map timeinfo.tm_wday (0=Sun, 1=Mon) to our bitmask (bit0=Mon ... bit6=Sun)
+        int ourDay = (timeinfo.tm_wday == 0) ? 6 : timeinfo.tm_wday - 1;
+        bool isDayEnabled = (activeWeekdays & (1 << ourDay)) > 0;
+        
+        char timeStr[6];
+        strftime(timeStr, sizeof(timeStr), "%H:%M", &timeinfo);
+        String nowTime = String(timeStr);
+        
+        if (isSpecificDate || isDayEnabled) {
+          if (autoArmTime != "" && nowTime == autoArmTime && lastAutoArmDay != timeinfo.tm_yday) {
+            lastAutoArmDay = timeinfo.tm_yday;
+            if (!systemArmed && !isAlarmActive) {
+              Serial.println("AUTO ARM TRIGGERED");
+              pendingArmTimer = 1;
+            }
+          }
+          if (!isSpecificDate && !autoArmAllDay && autoDisarmTime != "" && nowTime == autoDisarmTime && lastAutoDisarmDay != timeinfo.tm_yday) {
+            lastAutoDisarmDay = timeinfo.tm_yday;
+            if (systemArmed) {
+              Serial.println("AUTO DISARM TRIGGERED");
+              disarmSystem();
+            }
+          }
+        }
+      }
     }
 
     vTaskDelay(10 / portTICK_PERIOD_MS);
@@ -153,6 +263,10 @@ void setup() {
       err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
     ESP_ERROR_CHECK(nvs_flash_erase());
     err = nvs_flash_init();
+  }
+
+  if(!LittleFS.begin(true)){
+    Serial.println("LittleFS Mount Failed");
   }
 
   // 2. Hardware Setup
@@ -189,6 +303,20 @@ void setup() {
   sinricAppKey = preferences.getString("sinric_key", "");
   sinricAppSecret = preferences.getString("sinric_sec", "");
   sinricDeviceId = preferences.getString("sinric_dev", "");
+  webAdminUser = preferences.getString("web_user", "admin");
+  webAdminPass = preferences.getString("web_pass", "admin");
+  if (preferences.getBytes("out_mac", pairedOutsideMac, 6) == 6) {
+    hasPairedOutsideMac = true;
+    Serial.printf("Loaded Paired Outside Module MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                  pairedOutsideMac[0], pairedOutsideMac[1], pairedOutsideMac[2],
+                  pairedOutsideMac[3], pairedOutsideMac[4], pairedOutsideMac[5]);
+  }
+  autoArmTime = preferences.getString("auto_arm", "");
+  autoDisarmTime = preferences.getString("auto_disarm", "");
+  autoScheduleEnabled = preferences.getBool("auto_sch_en", false);
+  autoArmAllDay = preferences.getBool("auto_allday", false);
+  activeWeekdays = preferences.getUChar("active_wd", 0);
+  specificArmDates = preferences.getString("spec_dates", "");
   preferences.end();
 
   delay(1000);
@@ -202,7 +330,7 @@ void setup() {
   lcd.setCursor(0, 0);
   lcd.print("Connecting WiFi");
 
-  bool res = wm.autoConnect("SecuritySystem-Setup", "12345678");
+  bool res = wm.autoConnect("SecuritySystem-Setup", "SecuredESP32Setup!");
 
   if (!res) {
     Serial.println("Failed to connect and hit timeout");

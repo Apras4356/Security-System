@@ -1,6 +1,7 @@
 #include "RFIDManager.h"
 #include <Preferences.h>
 #include <esp_now.h>
+#include <LittleFS.h>
 
 // --- Link to Main System Functions & Variables ---
 extern void passiveBuzzerBeep(int durationMs);
@@ -39,8 +40,22 @@ void logRFIDEvent(String nameOrUID, String status) {
         strftime(timeFmt, sizeof(timeFmt), "%d/%m/%Y %H:%M:%S", &timeinfo);
         timeString = String(timeFmt);
     }
-    rfidLogs[logIndex] = timeString + " | " + nameOrUID + " | " + status;
+    String logString = timeString + " | " + nameOrUID + " | " + status;
+    rfidLogs[logIndex] = logString;
     logIndex = (logIndex + 1) % MAX_LOGS;
+
+    File file = LittleFS.open("/logs.txt", FILE_APPEND);
+    if (file) {
+        if (file.size() > 1000000) { // 1MB auto wipe
+            file.close();
+            LittleFS.remove("/logs.txt");
+            file = LittleFS.open("/logs.txt", FILE_APPEND);
+        }
+        if (file) {
+            file.println(logString);
+            file.close();
+        }
+    }
 }
 
 void openAccessPoint(int zoneID) {
