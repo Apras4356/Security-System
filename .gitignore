@@ -1,0 +1,20 @@
+# PlatformIO & Build artifacts
+.pio/
+.pioenvs/
+.piolibdeps/
+compile_commands.json
+.cache/
+graphify-out/
+.agents/
+
+# Secret and configuration files
+*.token
+*.key
+.env
+xiaomi.txt
+
+# Editor & OS files
+.vscode/.browse.c_cpp.db*
+.vscode/ipch/
+.DS_Store
+Thumbs.db
