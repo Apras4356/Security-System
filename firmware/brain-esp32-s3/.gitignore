@@ -2,12 +2,23 @@
 .pio/
 .vscode/
 build/
+.cache/
+compile_commands.json
+graphify-out/
+.agents/
 
 # Compiled output
 *.bin
 *.elf
 *.map
 *.hex
+
+# Secrets and Credentials
+*.env
+*.env.*
+*.key
+*.token
+*.secret
 
 # OS generated files
 .DS_Store
