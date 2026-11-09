@@ -20,6 +20,9 @@ extern String sinricAppSecret;
 extern String sinricDeviceId;
 extern String webAdminUser;
 extern String webAdminPass;
+extern uint8_t pairedOutsideMac[6];
+extern bool hasPairedOutsideMac;
+extern uint32_t lastRemoteCounter;
 
 extern volatile bool pendingAlarmNotification;
 extern char alarmReason[128];

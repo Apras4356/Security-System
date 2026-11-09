@@ -372,6 +372,19 @@ inline void handleResetWiFi() {
   ESP.restart();
 }
 
+inline void handleResetRemote() {
+  if (!requireAuth()) return;
+  preferences.begin("sys_prefs", false);
+  preferences.remove("out_mac");
+  preferences.remove("rem_counter");
+  preferences.end();
+  hasPairedOutsideMac = false;
+  memset(pairedOutsideMac, 0, 6);
+  lastRemoteCounter = 0;
+  server.sendHeader("Location", "/settings");
+  server.send(303);
+}
+
 inline void handleSettings() {
   if (!requireAuth()) return;
   String html = "<html><head><meta charset='UTF-8'><meta name='viewport' "
@@ -542,6 +555,12 @@ inline void handleSettings() {
   html +=
       "<a href='/resetwifi' class='btn btn-red' onclick=\"return confirm('" +
       confirmMsg + "');\">" + T("RESET WIFI", "ΕΠΑΝΑΦΟΡΑ WIFI") +
+      "</a><br><br>";
+  String confirmRemoteMsg = T("Unpair Outside Module and reset replay counter?",
+                              "Αποσύζευξη Εξωτερικής Μονάδας και μηδενισμός μετρητή;");
+  html +=
+      "<a href='/reset_remote' class='btn btn-orange' onclick=\"return confirm('" +
+      confirmRemoteMsg + "');\">" + T("RESET OUTSIDE MODULE PAIRING", "ΕΠΑΝΑΦΟΡΑ ΕΞΩΤΕΡΙΚΗΣ ΜΟΝΑΔΑΣ") +
       "</a><br><br>";
   html += "</div><br><a href='/' class='btn btn-gray'>" + T("BACK", "ΠΙΣΩ") +
           "</a></body></html>";
@@ -1817,6 +1836,7 @@ inline void setupWebHandlers() {
   server.on("/status_data", HTTP_GET, handleStatusData);
   server.on("/checkuid", HTTP_GET, handleCheckPendingUID);
   server.on("/resetwifi", HTTP_GET, handleResetWiFi);
+  server.on("/reset_remote", HTTP_GET, handleResetRemote);
   server.on("/setlang", HTTP_GET, handleSetLang);
   server.on("/settings", HTTP_GET, handleSettings);
   server.on("/help", HTTP_GET, handleHelp);

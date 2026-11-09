@@ -139,14 +139,7 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
     return;
   }
 
-  // 2. Replay attack protection (counter must increase; allow 1 for fresh reboot)
-  if (tempMsg.counter <= lastRemoteCounter && tempMsg.counter != 1) {
-    Serial.printf("⛔ ESP-NOW: Rejected replayed packet! Counter: %u <= %u\n", tempMsg.counter, lastRemoteCounter);
-    return;
-  }
-  lastRemoteCounter = tempMsg.counter;
-
-  // 3. Sender MAC verification
+  // 2. Sender MAC verification (or initial auto-pairing)
   if (hasPairedOutsideMac) {
     if (memcmp(mac, pairedOutsideMac, 6) != 0) {
       Serial.printf("⛔ ESP-NOW: Rejected packet from unauthorized MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
@@ -163,6 +156,16 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
     Serial.printf("✅ ESP-NOW: Paired with Outside Module MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
                   mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
   }
+
+  // 3. Strict Replay attack protection (counter MUST be strictly monotonic)
+  if (tempMsg.counter <= lastRemoteCounter) {
+    Serial.printf("⛔ ESP-NOW: Rejected replayed packet! Counter: %u <= %u\n", tempMsg.counter, lastRemoteCounter);
+    return;
+  }
+  lastRemoteCounter = tempMsg.counter;
+  preferences.begin("sys_prefs", false);
+  preferences.putUInt("rem_counter", lastRemoteCounter);
+  preferences.end();
 
   memcpy(lastRemoteMac, mac, 6);
   incomingRead = tempMsg;
@@ -305,6 +308,7 @@ void setup() {
   sinricDeviceId = preferences.getString("sinric_dev", "");
   webAdminUser = preferences.getString("web_user", "admin");
   webAdminPass = preferences.getString("web_pass", "admin");
+  lastRemoteCounter = preferences.getUInt("rem_counter", 0);
   if (preferences.getBytes("out_mac", pairedOutsideMac, 6) == 6) {
     hasPairedOutsideMac = true;
     Serial.printf("Loaded Paired Outside Module MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",

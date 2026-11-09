@@ -3,6 +3,11 @@
 #define BOT_TOKEN ""
 #define CHAT_ID ""
 #define SMART_BULB_IP "192.168.1.XXX"
+
+// ==============================================================================
+// PRE-SHARED CRYPTOGRAPHIC KEYS (IMPORTANT: CHANGE BEFORE DEPLOYMENT)
+// Ensure the identical keys are configured in Access Point and Outside Module!
+// ==============================================================================
 #define RADAR_UDP_TOKEN "SecSys_Radar_2026"
 #define ESPNOW_SECRET_KEY "SecSys_ESPNow_#99!"
 
