@@ -3,6 +3,7 @@
 #include <esp_wifi.h> // <-- Required to change Wi-Fi channels
 #include <SPI.h>
 #include <MFRC522.h>
+#include <Preferences.h>
 
 // --- PINS (Adjust to your wiring) ---
 #define SS_PIN 21
@@ -20,6 +21,7 @@ RTC_DATA_ATTR uint8_t mainChannel = 1;
 RTC_DATA_ATTR bool isPaired = false;
 RTC_DATA_ATTR uint32_t msgCounter = 0;
 
+// IMPORTANT: Must match the key in Brain esp32 s3 Config.h!
 #define ESPNOW_SECRET_KEY "SecSys_ESPNow_#99!"
 
 // --- DATA STRUCTURES ---
@@ -133,7 +135,13 @@ void setup() {
         int rawAdc = analogRead(BATT_PIN);
         myData.voltage = (rawAdc / 4095.0) * 3.3 * 2.0;
         scannedUID.toCharArray(myData.uid, 30);
-        msgCounter++;
+
+        Preferences prefs;
+        prefs.begin("node_cfg", false);
+        msgCounter = prefs.getUInt("counter", 0) + 1;
+        prefs.putUInt("counter", msgCounter);
+        prefs.end();
+
         myData.counter = msgCounter;
         myData.authHash = calculateAuthHash(myData.uid, myData.counter);
 
