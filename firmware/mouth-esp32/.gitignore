@@ -1,0 +1,30 @@
+# PlatformIO and IDE folders
+.pio/
+.vscode/
+.gcc-flags.json
+.cache/
+compile_commands.json
+graphify-out/
+
+# Build outputs
+build/
+bin/
+*.bin
+*.elf
+*.map
+*.hex
+
+# Library dependencies
+libdeps/
+.lib/
+
+# Secrets and Credentials
+*.env
+*.env.*
+*.key
+*.token
+*.secret
+
+# OS hidden files
+.DS_Store
+Thumbs.db
