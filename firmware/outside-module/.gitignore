@@ -2,6 +2,9 @@
 .pio/
 .vscode/
 .gcc-flags.json
+.cache/
+compile_commands.json
+graphify-out/
 
 # Build outputs
 build/
@@ -11,13 +14,17 @@ bin/
 *.map
 *.hex
 
-# Library dependencies (Git will re-download these if needed)
+# Library dependencies
 libdeps/
 .lib/
+
+# Secrets and Credentials
+*.env
+*.env.*
+*.key
+*.token
+*.secret
 
 # OS hidden files
 .DS_Store
 Thumbs.db
-
-# Sensitive Info (optional, but good practice)
-# secrets.h
