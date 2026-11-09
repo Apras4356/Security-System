@@ -1,0 +1,43 @@
+{
+  "folders": [
+    {
+      "name": "📦 Root (Overview)",
+      "path": "."
+    },
+    {
+      "name": "🧠 Brain ESP32-S3 (Main Hub & Web Server)",
+      "path": "firmware/brain-esp32-s3"
+    },
+    {
+      "name": "🚪 Outside Module (RFID Keypad & Battery Node)",
+      "path": "firmware/outside-module"
+    },
+    {
+      "name": "📡 Access Point (Radar Node / Wi-Fi CSI)",
+      "path": "firmware/access-point-radar"
+    },
+    {
+      "name": "🔊 Mouth ESP32 (Bluetooth Siren)",
+      "path": "firmware/mouth-esp32"
+    },
+    {
+      "name": "🛠️ Hardware (3D Models & PCB)",
+      "path": "hardware"
+    },
+    {
+      "name": "📚 Documentation",
+      "path": "docs"
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/.git": true,
+      "**/.svn": true,
+      "**/.hg": true,
+      "**/CVS": true,
+      "**/.DS_Store": true,
+      "**/Thumbs.db": true,
+      "**/.pio": false
+    }
+  }
+}
